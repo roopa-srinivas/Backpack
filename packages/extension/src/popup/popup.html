@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="color-scheme" content="dark light" />
+<title>Backpack</title>
+<link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+<header>
+  <img src="icons/icon-32.png" width="22" height="22" alt="" />
+  <h1>Backpack</h1>
+  <span id="last-sync" class="muted"></span>
+</header>
+
+<section>
+  <h2>Connections</h2>
+  <ul class="links">
+    <li>
+      <span class="name">Google Calendar</span>
+      <span id="google-state" class="state"></span>
+      <button id="connect-google" type="button" class="small">Connect</button>
+    </li>
+    <li>
+      <span class="name">Canvas</span>
+      <span id="canvas-state" class="state"></span>
+    </li>
+    <li class="canvas-host">
+      <label for="canvas-host" class="muted">Your school's Canvas address</label>
+      <div class="row">
+        <input id="canvas-host" type="text" inputmode="url" spellcheck="false" placeholder="bcourses.berkeley.edu" />
+        <button id="save-canvas" type="button" class="small">Allow</button>
+      </div>
+    </li>
+    <li><span class="name">Gradescope</span><span class="state soon">Coming soon</span></li>
+    <li><span class="name">PrairieLearn</span><span class="state soon">Coming soon</span></li>
+  </ul>
+</section>
+
+<section>
+  <h2>Format</h2>
+  <div class="field">
+    <label for="calendars">Calendars</label>
+    <select id="calendars">
+      <option value="single">One "Backpack" calendar</option>
+      <option value="perCourse">One per course</option>
+      <option value="perPlatform">One per platform</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="style">Each assignment as</label>
+    <select id="style">
+      <option value="deadline">30-minute event at the due time</option>
+      <option value="allDay">All-day event on the due date</option>
+      <option value="workBlock">2-hour work block the day before</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="submitted">Submitted work</label>
+    <select id="submitted">
+      <option value="check">Keep, with a ✓</option>
+      <option value="hide">Remove from calendar</option>
+      <option value="keep">Keep as is</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="title-template">Event title</label>
+    <input id="title-template" type="text" spellcheck="false" />
+    <p class="muted hint">Use {course}, {title}, {platform}, {kind} and {points}.</p>
+  </div>
+</section>
+
+<footer>
+  <p id="message" role="status" aria-live="polite"></p>
+  <button id="sync" type="button" class="primary">Sync now</button>
+</footer>
+<script src="popup.js" type="module"></script>
+</body>
+</html>

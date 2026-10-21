@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Backpack",
+  "version": "0.1.0",
+  "description": "Puts your Canvas, Gradescope and PrairieLearn assignments on Google Calendar, formatted your way.",
+  "minimum_chrome_version": "120",
+  "action": { "default_popup": "popup.html", "default_title": "Backpack" },
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["storage", "alarms", "identity"],
+  "host_permissions": ["https://www.googleapis.com/*"],
+  "optional_host_permissions": ["https://*/*"],
+  "oauth2": {
+    "client_id": "__GOOGLE_CLIENT_ID__",
+    "scopes": ["https://www.googleapis.com/auth/calendar.app.created"]
+  },
+  "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" }
+}

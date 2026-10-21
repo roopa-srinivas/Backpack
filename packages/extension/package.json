@@ -1,0 +1,11 @@
+{
+  "name": "@backpack/extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@backpack/core": "*"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "outDir": "dist-types", "rootDir": ".", "types": ["chrome", "node"] },
+  "include": ["src", "test", "build.mjs"],
+  "references": [{ "path": "../core" }]
+}
