@@ -140,14 +140,15 @@ export function parseCoursePage(html: string, course: GradescopeCourse): Assignm
 export async function fetchGradescope(fetchImpl: typeof fetch = fetch): Promise<Assignment[]> {
   async function page(path: string): Promise<string> {
     const response = await fetchImpl(`${BASE}${path}`, { credentials: "include", headers: { Accept: "text/html" } });
-    if (response.status === 401 || response.status === 403) {
-      throw new GradescopeError("Sign in to gradescope.com in this browser, then sync again.", response.status);
-    }
+    // Each way of being turned away says which it was, to tell a signed-out
+    // browser from cookies not reaching Gradescope.
+    const signIn = (why: string, status?: number) =>
+      new GradescopeError(`Sign in to gradescope.com in this browser, then sync again (${why}).`, status);
+    if (response.status === 401 || response.status === 403) throw signIn(`${response.status} on ${path}`, response.status);
     if (!response.ok) throw new GradescopeError(`Gradescope answered ${response.status} for ${path}.`, response.status);
     const html = await response.text();
-    if (/\/login/.test(response.url) || isLoginPage(html)) {
-      throw new GradescopeError("Sign in to gradescope.com in this browser, then sync again.");
-    }
+    if (/\/login/.test(new URL(response.url || BASE).pathname)) throw signIn(`sent to ${new URL(response.url).pathname}`);
+    if (isLoginPage(html)) throw signIn(`sign-in form on ${path}`);
     return html;
   }
 

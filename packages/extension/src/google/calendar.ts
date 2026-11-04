@@ -27,7 +27,9 @@ export interface BackpackEventRef {
 export class CalendarClient {
   constructor(
     private readonly auth: TokenSource,
-    private readonly fetchImpl: typeof fetch = fetch,
+    // Wrapped so fetch isn't called as a method of this class: in a service
+    // worker, fetch with any `this` but the global throws "Illegal invocation".
+    private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init),
   ) {}
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
