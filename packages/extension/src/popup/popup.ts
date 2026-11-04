@@ -163,17 +163,22 @@ function websiteRow(id: string, website: CourseWebsite, editing = false): HTMLLI
   row.append(input, save);
   li.append(row);
 
-  if (website.status === "missing") {
+  // Any course can be marked as having no website, including one where
+  // Backpack found the wrong site.
+  const actions = make("div", "actions");
+  if (website.status !== "none") {
     const none = make("button", "link", "This course has no website");
     none.type = "button";
     none.addEventListener("click", () => void markNoWebsite(id));
-    li.append(none);
-  } else {
+    actions.append(none);
+  }
+  if (website.status !== "missing") {
     const cancel = make("button", "link", "Cancel");
     cancel.type = "button";
     cancel.addEventListener("click", () => li.replaceWith(websiteRow(id, website)));
-    li.append(cancel);
+    actions.append(cancel);
   }
+  li.append(actions);
   if (editing) queueMicrotask(() => input.focus());
   return li;
 }
