@@ -12,6 +12,8 @@ export interface SyncResult {
 /** Everything Backpack keeps in chrome.storage.local. */
 export interface State {
   settings: Settings;
+  /** Platforms the student checked off in the menu as ones their classes use. */
+  platforms: Platform[];
   /** The school's Canvas host, e.g. "bcourses.berkeley.edu"; null until set up. */
   canvasHost: string | null;
   /** Backpack's calendars by key ("all", "course:cs169a", ...). */
@@ -24,7 +26,7 @@ export interface State {
 }
 
 export function initialState(): State {
-  return { settings: defaultSettings(), canvasHost: null, calendars: {}, cache: {}, lastSync: null, errors: {} };
+  return { settings: defaultSettings(), platforms: [], canvasHost: null, calendars: {}, cache: {}, lastSync: null, errors: {} };
 }
 
 export interface Store {
@@ -38,6 +40,8 @@ export const chromeStore: Store = {
     const state = { ...initialState(), ...stored };
     // Settings added in later versions get their defaults.
     state.settings = { ...defaultSettings(), ...stored.settings };
+    // Before the checklist, setting a Canvas address was what turned Canvas on.
+    if (!stored.platforms) state.platforms = stored.canvasHost ? ["canvas"] : [];
     return state;
   },
   async save(patch) {

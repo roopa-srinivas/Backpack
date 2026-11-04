@@ -1,4 +1,4 @@
-import type { Assignment, AssignmentKind } from "@backpack/core";
+import { kindFromTitle, type Assignment, type AssignmentKind } from "@backpack/core";
 
 /** The parts of Canvas's REST API responses Backpack reads. */
 interface CanvasCourse {
@@ -51,10 +51,7 @@ function kindOf(assignment: CanvasAssignment): AssignmentKind {
   const types = assignment.submission_types;
   if (types.includes("online_quiz")) return "quiz";
   if (types.includes("discussion_topic")) return "discussion";
-  if (/\b(exam|midterm|final)\b/i.test(assignment.name)) return "exam";
-  if (/\bproj(ect)?\b/i.test(assignment.name)) return "project";
-  if (/\blab\b/i.test(assignment.name)) return "lab";
-  return "assignment";
+  return kindFromTitle(assignment.name);
 }
 
 const SUBMITTED_STATES = new Set(["submitted", "graded", "pending_review"]);

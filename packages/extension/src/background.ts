@@ -1,6 +1,9 @@
+import type { Assignment, Platform } from "@backpack/core";
 import { chromeTokenSource } from "./google/auth.js";
 import { CalendarClient } from "./google/calendar.js";
+import { platformInfo } from "./platforms.js";
 import { fetchCanvas } from "./sources/canvas.js";
+import { fetchGradescope } from "./sources/gradescope.js";
 import { chromeStore, type State } from "./state.js";
 import { syncOnce, type Source } from "./sync.js";
 
@@ -10,13 +13,31 @@ const SYNC_EVERY_MINUTES = 180;
 export type Request = { type: "sync" } | { type: "connectGoogle" };
 export type Reply = { ok: true } | { ok: false; error: string };
 
+const READERS: Partial<Record<Platform, (state: State) => Promise<Assignment[]>>> = {
+  canvas: (state) => fetchCanvas(state.canvasHost!),
+  gradescope: () => fetchGradescope(),
+};
+
+/**
+ * One source per platform the student checked. A platform that isn't fully
+ * set up still gets a source that fails with what to fix, so it shows in the
+ * menu and its existing events stay put instead of vanishing.
+ */
 async function sourcesFor(state: State): Promise<Source[]> {
-  const sources: Source[] = [];
-  const host = state.canvasHost;
-  if (host && (await chrome.permissions.contains({ origins: [`https://${host}/*`] }))) {
-    sources.push({ platform: "canvas", fetch: () => fetchCanvas(host) });
-  }
-  return sources;
+  return Promise.all(
+    state.platforms.map(async (platform): Promise<Source> => {
+      const info = platformInfo(platform);
+      const origins = info.origins(state);
+      const read = READERS[platform];
+      if (!read || !origins) {
+        return { platform, fetch: () => Promise.reject(new Error(`Finish setting up ${info.label} in the Backpack menu.`)) };
+      }
+      if (!(await chrome.permissions.contains({ origins }))) {
+        return { platform, fetch: () => Promise.reject(new Error(`Allow Backpack to read ${info.label} in the menu.`)) };
+      }
+      return { platform, fetch: () => read(state) };
+    }),
+  );
 }
 
 let running: Promise<void> | null = null;

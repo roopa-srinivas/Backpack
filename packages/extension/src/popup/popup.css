@@ -39,6 +39,13 @@ section { padding: 0.8rem 1rem; border-bottom: 1px solid var(--border); }
 .state { font-size: 0.78rem; color: var(--ink2); }
 .state[data-ok="true"] { color: var(--ok); }
 .state.soon { font-style: italic; }
+.platforms { list-style: none; display: grid; gap: 0.45rem; }
+.platforms li { display: flex; align-items: center; gap: 0.5rem; }
+.check { display: flex; align-items: center; gap: 0.5rem; flex: 1; cursor: pointer; }
+.check input { width: auto; accent-color: var(--accent); margin: 0; }
+.check:has(input:disabled) { cursor: default; color: var(--ink2); }
+.lead { margin: -0.2rem 0 0.55rem; }
+.state[data-ok="false"] { color: var(--error); }
 .canvas-host { flex-direction: column; align-items: stretch !important; gap: 0.25rem !important; padding-left: 0.6rem; border-left: 2px solid var(--border); }
 .row { display: flex; gap: 0.4rem; }
 .field { display: grid; gap: 0.2rem; margin-bottom: 0.6rem; }

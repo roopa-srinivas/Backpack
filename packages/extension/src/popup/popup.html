@@ -14,26 +14,43 @@
 </header>
 
 <section>
-  <h2>Connections</h2>
+  <h2>Calendar</h2>
   <ul class="links">
     <li>
       <span class="name">Google Calendar</span>
       <span id="google-state" class="state"></span>
       <button id="connect-google" type="button" class="small">Connect</button>
     </li>
+  </ul>
+</section>
+
+<section>
+  <h2>Where your classes post assignments</h2>
+  <p class="muted hint lead">Check every site you use. Backpack reads them with the logins already in this browser.</p>
+  <ul class="platforms">
     <li>
-      <span class="name">Canvas</span>
-      <span id="canvas-state" class="state"></span>
+      <label class="check"><input type="checkbox" data-platform="canvas" /><span class="name">bCourses (Canvas)</span></label>
+      <span class="state" data-state="canvas"></span>
     </li>
-    <li class="canvas-host">
+    <li class="canvas-host" id="canvas-setup" hidden>
       <label for="canvas-host" class="muted">Your school's Canvas address</label>
       <div class="row">
         <input id="canvas-host" type="text" inputmode="url" spellcheck="false" placeholder="bcourses.berkeley.edu" />
         <button id="save-canvas" type="button" class="small">Allow</button>
       </div>
     </li>
-    <li><span class="name">Gradescope</span><span class="state soon">Coming soon</span></li>
-    <li><span class="name">PrairieLearn</span><span class="state soon">Coming soon</span></li>
+    <li>
+      <label class="check"><input type="checkbox" data-platform="gradescope" /><span class="name">Gradescope</span></label>
+      <span class="state" data-state="gradescope"></span>
+    </li>
+    <li>
+      <label class="check"><input type="checkbox" data-platform="prairielearn" disabled /><span class="name">PrairieLearn</span></label>
+      <span class="state soon">Coming soon</span>
+    </li>
+    <li>
+      <label class="check"><input type="checkbox" disabled /><span class="name">Course websites</span></label>
+      <span class="state soon">Coming soon</span>
+    </li>
   </ul>
 </section>
 
