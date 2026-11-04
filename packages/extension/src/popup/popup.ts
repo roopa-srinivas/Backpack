@@ -3,6 +3,7 @@ import type { Reply, Request } from "../background.js";
 import { isGoogleConnected } from "../google/auth.js";
 import { platformInfo } from "../platforms.js";
 import { chromeStore, type State } from "../state.js";
+import { missingWebsites, normalizeWebsiteUrl, showWebsiteBadge, type CourseWebsite } from "../websites.js";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -76,7 +77,151 @@ async function render() {
   $<HTMLInputElement>("title-template").value = settings.titleTemplate;
 
   $("last-sync").textContent = state.lastSync ? ago(state.lastSync.at) : "";
+  renderWebsites(state);
   showErrors(state);
+}
+
+/** Creates an element with an optional class and text. */
+function make<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text) el.textContent = text;
+  return el;
+}
+
+const WEBSITE_ORDER: Record<CourseWebsite["status"], number> = { missing: 0, found: 1, manual: 1, none: 2 };
+
+/** "https://www.cs61a.org/" -> "cs61a.org". */
+const shortUrl = (url: string) => url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+
+/** Shows the Course websites section once bCourses is set up. */
+function renderWebsites(state: State) {
+  const show = state.platforms.includes("canvas") && Boolean(state.canvasHost);
+  $("websites-section").hidden = !show;
+  if (!show) return;
+
+  const entries = Object.entries(state.courseWebsites).sort(
+    ([, a], [, b]) => WEBSITE_ORDER[a.status] - WEBSITE_ORDER[b.status] || a.label.localeCompare(b.label),
+  );
+  const missing = missingWebsites(state).length;
+  $("websites-summary").textContent = !state.websitesCheckedAt && !entries.length
+    ? "Backpack looks on bCourses for each course's website."
+    : !entries.length
+      ? "No current courses found on bCourses."
+      : missing
+        ? `Couldn't find a website for ${missing} course${missing === 1 ? "" : "s"} on bCourses. Add ${missing === 1 ? "it" : "them"} below, or mark a course as having none.`
+        : "Found on bCourses. Reading assignments from course websites is coming soon.";
+  $("websites").replaceChildren(...entries.map(([id, website]) => websiteRow(id, website)));
+}
+
+function websiteRow(id: string, website: CourseWebsite, editing = false): HTMLLIElement {
+  const li = make("li");
+  if (website.status === "missing") li.dataset.missing = "true";
+  const top = make("div", "top");
+  const name = make("span", "name", website.label);
+  name.title = website.name;
+  top.append(name);
+  li.append(top);
+
+  if (website.url && !editing) {
+    const link = make("a", "site", shortUrl(website.url));
+    link.href = website.url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.title = website.url;
+    const change = make("button", "mini", "Change");
+    change.type = "button";
+    change.addEventListener("click", () => li.replaceWith(websiteRow(id, website, true)));
+    top.append(link, change);
+    li.append(make("span", "muted hint", website.status === "manual" ? "Added by you" : `Found in ${website.foundIn ?? "bCourses"}`));
+    return li;
+  }
+
+  if (website.status === "none" && !editing) {
+    const add = make("button", "mini", "Add");
+    add.type = "button";
+    add.addEventListener("click", () => li.replaceWith(websiteRow(id, website, true)));
+    top.append(make("span", "note", "No website"), add);
+    return li;
+  }
+
+  if (website.status === "missing") top.append(make("span", "note", "Not found on bCourses"));
+  const row = make("div", "row");
+  const input = make("input");
+  input.type = "text";
+  input.inputMode = "url";
+  input.spellcheck = false;
+  input.placeholder = "https://…";
+  input.value = website.url ?? "";
+  input.setAttribute("aria-label", `${website.label} website`);
+  const save = make("button", "mini", "Save");
+  save.type = "button";
+  save.addEventListener("click", () => void saveWebsite(id, input.value));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") void saveWebsite(id, input.value);
+  });
+  row.append(input, save);
+  li.append(row);
+
+  if (website.status === "missing") {
+    const none = make("button", "link", "This course has no website");
+    none.type = "button";
+    none.addEventListener("click", () => void markNoWebsite(id));
+    li.append(none);
+  } else {
+    const cancel = make("button", "link", "Cancel");
+    cancel.type = "button";
+    cancel.addEventListener("click", () => li.replaceWith(websiteRow(id, website)));
+    li.append(cancel);
+  }
+  if (editing) queueMicrotask(() => input.focus());
+  return li;
+}
+
+async function updateWebsite(id: string, patch: Pick<CourseWebsite, "url" | "status">) {
+  const state = await chromeStore.load();
+  const previous = state.courseWebsites[id];
+  if (!previous) return null;
+  // "Found in" no longer applies once the student sets it.
+  const updated: CourseWebsite = { label: previous.label, name: previous.name, ...patch, checkedAt: Date.now() };
+  const courseWebsites = { ...state.courseWebsites, [id]: updated };
+  await chromeStore.save({ courseWebsites });
+  await showWebsiteBadge({ ...state, courseWebsites });
+  return updated;
+}
+
+async function saveWebsite(id: string, input: string) {
+  const url = normalizeWebsiteUrl(input);
+  if (!url) {
+    say("Enter the course website's address, like cs61a.org.", "error");
+    return;
+  }
+  const updated = await updateWebsite(id, { url, status: "manual" });
+  if (updated) say(`Saved the ${updated.label} website.`, "ok");
+  await render();
+}
+
+async function markNoWebsite(id: string) {
+  const updated = await updateWebsite(id, { url: null, status: "none" });
+  if (updated) say(`Marked ${updated.label} as having no website.`, "ok");
+  await render();
+}
+
+async function findWebsites() {
+  const button = $<HTMLButtonElement>("find-websites");
+  button.disabled = true;
+  say("Looking for course websites on bCourses…");
+  const reply = await send({ type: "findWebsites" });
+  button.disabled = false;
+  const state = await chromeStore.load();
+  if (!reply.ok) {
+    say(reply.error, "error");
+  } else {
+    const all = Object.values(state.courseWebsites);
+    const found = all.filter((w) => w.url).length;
+    say(`Websites for ${found} of ${all.length} course${all.length === 1 ? "" : "s"}.`, found === all.length ? "ok" : "");
+  }
+  await render();
 }
 
 function showErrors(state: State) {
@@ -138,7 +283,10 @@ $("save-canvas").addEventListener("click", async () => {
   await chromeStore.save({ canvasHost: host, platforms: [...new Set([...platforms, "canvas" as const])] });
   say(`Canvas set to ${host}.`, "ok");
   await render();
+  await findWebsites();
 });
+
+$("find-websites").addEventListener("click", () => void findWebsites());
 
 $("calendars").addEventListener("change", (e) =>
   saveSettings({ calendars: (e.target as HTMLSelectElement).value as Settings["calendars"] }),
@@ -171,4 +319,10 @@ $("sync").addEventListener("click", async () => {
   if (reply.ok && Object.keys(state.errors).length) showErrors(state);
 });
 
-void render();
+void render().then(async () => {
+  // First time with bCourses set up: look for course websites right away.
+  const state = await chromeStore.load();
+  if (!$("websites-section").hidden && !state.websitesCheckedAt && !Object.keys(state.courseWebsites).length) {
+    await findWebsites();
+  }
+});

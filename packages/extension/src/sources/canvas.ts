@@ -1,7 +1,7 @@
-import { kindFromTitle, type Assignment, type AssignmentKind } from "@backpack/core";
+import { kindFromTitle, type Assignment, type AssignmentKind, type Course } from "@backpack/core";
 
 /** The parts of Canvas's REST API responses Backpack reads. */
-interface CanvasCourse {
+export interface CanvasCourse {
   id: number;
   name?: string;
   course_code?: string;
@@ -60,12 +60,7 @@ export function toAssignment(course: CanvasCourse, item: CanvasAssignment): Assi
   return {
     platform: "canvas",
     id: String(item.id),
-    course: {
-      platform: "canvas",
-      id: String(course.id),
-      name: course.name ?? course.course_code ?? `Course ${course.id}`,
-      ...(course.course_code ? { code: course.course_code } : {}),
-    },
+    course: toCourse(course),
     title: item.name,
     url: item.html_url,
     dueAt: item.due_at,
@@ -75,35 +70,80 @@ export function toAssignment(course: CanvasCourse, item: CanvasAssignment): Assi
   };
 }
 
+export interface CanvasApi {
+  host: string;
+  /** Every item of a paginated list. */
+  getAll<T>(path: string): Promise<T[]>;
+  /** One JSON object. */
+  get<T>(path: string): Promise<T>;
+  /** A regular Canvas page, as HTML. */
+  getPage(path: string): Promise<string>;
+}
+
 /**
- * Reads every assignment in the student's active Canvas courses, using the
- * browser's Canvas login. `host` is the school's Canvas, e.g.
- * "bcourses.berkeley.edu".
+ * GETs against a school's Canvas using the browser's Canvas login. `host` is
+ * the school's Canvas, e.g. "bcourses.berkeley.edu".
  */
-export async function fetchCanvas(host: string, fetchImpl: typeof fetch = fetch): Promise<Assignment[]> {
+export function canvasApi(host: string, fetchImpl: typeof fetch = fetch): CanvasApi {
   const base = `https://${host}`;
 
-  async function getAll<T>(path: string): Promise<T[]> {
-    const items: T[] = [];
-    let url: string | null = `${base}${path}`;
-    while (url) {
-      const response: Response = await fetchImpl(url, { credentials: "include", headers: { Accept: "application/json" } });
-      if (response.status === 401 || response.status === 403) {
-        throw new CanvasError(`Sign in to ${host} in this browser, then sync again.`, response.status);
-      }
-      if (!response.ok) throw new CanvasError(`Canvas answered ${response.status} for ${path}.`, response.status);
-      items.push(...(parseCanvasJson(await response.text()) as T[]));
-      url = nextLink(response.headers.get("Link"));
+  async function request(url: string, path: string, accept: string): Promise<Response> {
+    const response = await fetchImpl(url, { credentials: "include", headers: { Accept: accept } });
+    if (response.status === 401 || response.status === 403) {
+      throw new CanvasError(`Sign in to ${host} in this browser, then sync again.`, response.status);
     }
-    return items;
+    if (!response.ok) throw new CanvasError(`Canvas answered ${response.status} for ${path}.`, response.status);
+    return response;
   }
 
-  const courses = (await getAll<CanvasCourse>("/api/v1/users/self/courses?enrollment_state=active&per_page=100")).filter(
-    (c) => !c.access_restricted_by_date,
-  );
+  return {
+    host,
+    async getAll<T>(path: string): Promise<T[]> {
+      const items: T[] = [];
+      let url: string | null = `${base}${path}`;
+      while (url) {
+        const response: Response = await request(url, path, "application/json");
+        items.push(...(parseCanvasJson(await response.text()) as T[]));
+        url = nextLink(response.headers.get("Link"));
+      }
+      return items;
+    },
+    async get<T>(path: string): Promise<T> {
+      const response = await request(`${base}${path}`, path, "application/json");
+      return parseCanvasJson(await response.text()) as T;
+    },
+    async getPage(path: string): Promise<string> {
+      return (await request(`${base}${path}`, path, "text/html")).text();
+    },
+  };
+}
+
+/** The student's active courses, skipping ones that haven't opened or have closed. */
+export async function fetchCanvasCourses(api: CanvasApi): Promise<CanvasCourse[]> {
+  const courses = await api.getAll<CanvasCourse>("/api/v1/users/self/courses?enrollment_state=active&per_page=100");
+  return courses.filter((c) => !c.access_restricted_by_date);
+}
+
+/** How Canvas courses look to the rest of Backpack. */
+export function toCourse(course: CanvasCourse): Course {
+  return {
+    platform: "canvas",
+    id: String(course.id),
+    name: course.name ?? course.course_code ?? `Course ${course.id}`,
+    ...(course.course_code ? { code: course.course_code } : {}),
+  };
+}
+
+/**
+ * Reads every assignment in the student's active Canvas courses, using the
+ * browser's Canvas login.
+ */
+export async function fetchCanvas(host: string, fetchImpl: typeof fetch = fetch): Promise<Assignment[]> {
+  const api = canvasApi(host, fetchImpl);
+  const courses = await fetchCanvasCourses(api);
   const perCourse = await Promise.all(
     courses.map(async (course) => {
-      const items = await getAll<CanvasAssignment>(
+      const items = await api.getAll<CanvasAssignment>(
         `/api/v1/courses/${course.id}/assignments?per_page=100&include[]=submission&order_by=due_at`,
       );
       return items.filter((item) => item.published !== false).map((item) => toAssignment(course, item));

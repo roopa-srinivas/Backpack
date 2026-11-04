@@ -1,6 +1,6 @@
 import { defaultSettings, type Assignment, type CalendarEventBody } from "@backpack/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { memoryStore } from "../src/state.js";
+import { initialState, memoryStore, SHARED_KEYS, type State, type Store } from "../src/state.js";
 import { syncOnce, type Calendar, type Source } from "../src/sync.js";
 
 const NOW = Date.parse("2026-10-20T12:00:00Z");
@@ -109,6 +109,44 @@ describe("syncOnce", () => {
     expect(google.summaries()).toEqual(["Backpack: EECS 106A · Lab 4"]);
   });
 
+  it("reuses calendars made by a sync that stopped partway, instead of making copies", async () => {
+    const s = store();
+    await s.save({ settings: { ...s.state.settings, calendars: "perCourse" } });
+    const google = new FakeCalendar();
+    const create = google.createCalendar.bind(google);
+    // The first course's calendar is made, then the connection drops.
+    let made = 0;
+    google.createCalendar = async (name: string) => {
+      if (made++ === 1) throw new Error("Network dropped");
+      return create(name);
+    };
+    await expect(syncOnce(s, [canvas], google, NOW)).rejects.toThrow("Network dropped");
+
+    google.createCalendar = create;
+    await syncOnce(s, [canvas], google, NOW);
+    expect([...google.calendars.values()].map((c) => c.name).sort()).toEqual(["Backpack · CS 169A", "Backpack · EECS 106A"]);
+    expect(google.summaries()).toHaveLength(2);
+  });
+
+  it("puts an assignment listed on bCourses and Gradescope on the calendar once", async () => {
+    const s = store();
+    const google = new FakeCalendar();
+    const gradescope: Source = {
+      platform: "gradescope",
+      fetch: async () => [
+        {
+          ...canvasAssignment("77", "Homework 03: Ruby Intro", "2026-10-24T07:00:00Z"),
+          platform: "gradescope",
+          course: { platform: "gradescope", id: "880", name: "CS 169A Fall 2026" },
+          url: "https://www.gradescope.com/courses/880/assignments/77",
+        },
+      ],
+    };
+    await syncOnce(s, [canvas, gradescope], google, NOW);
+    await syncOnce(s, [canvas, gradescope], google, NOW);
+    expect(google.summaries().sort()).toEqual(["Backpack: CS 169A · Homework 03: Ruby Intro", "Backpack: EECS 106A · Lab 4"]);
+  });
+
   it("keeps the last good events when Canvas can't be reached", async () => {
     const s = store();
     const google = new FakeCalendar();
@@ -193,6 +231,102 @@ describe("syncOnce with several platforms", () => {
     const result = await syncOnce(s, [canvas], google, NOW);
     expect(google.summaries().sort()).toEqual(["Backpack: CS 169A · HW 3", "Backpack: EECS 106A · Lab 4"]);
     expect(result).toMatchObject({ created: 1, removed: 1 });
+  });
+});
+
+/**
+ * Two computers signed in to the same Chrome profile: each has its own local
+ * storage, and they share SHARED_KEYS through `synced`, which tests can swap
+ * out to act like sync storage that hasn't caught up yet.
+ */
+function computer(synced: { data: Partial<State> }): Store {
+  const local: Partial<State> = {};
+  return {
+    async load() {
+      return structuredClone({ ...initialState(), settings: defaultSettings("America/Los_Angeles"), ...local, ...synced.data });
+    },
+    async save(patch) {
+      for (const [key, value] of Object.entries(structuredClone(patch))) {
+        const area: Record<string, unknown> = (SHARED_KEYS as readonly string[]).includes(key) ? synced.data : local;
+        area[key] = value;
+      }
+    },
+  };
+}
+
+describe("syncing from two computers", () => {
+  it("uses the calendar the other computer made, instead of a second copy", async () => {
+    const synced = { data: {} };
+    const [laptop, desktop] = [computer(synced), computer(synced)];
+    const google = new FakeCalendar();
+    await syncOnce(laptop, [canvas], google, NOW);
+    expect(await syncOnce(desktop, [canvas], google, NOW)).toMatchObject({ created: 0, unchanged: 2 });
+    expect(google.calendars.size).toBe(1);
+    expect(google.summaries()).toHaveLength(2);
+  });
+
+  it("ends up with one calendar when both computers made one before sync storage caught up", async () => {
+    const [laptopView, desktopView] = [{ data: {} }, { data: {} }];
+    const [laptop, desktop] = [computer(laptopView), computer(desktopView)];
+    const google = new FakeCalendar();
+    await syncOnce(laptop, [canvas], google, NOW);
+    await syncOnce(desktop, [canvas], google, NOW);
+    expect(google.summaries()).toHaveLength(4); // every assignment twice, for now
+
+    // Sync storage settles on the desktop's calendar list everywhere.
+    laptopView.data = desktopView.data;
+    await syncOnce(laptop, [canvas], google, NOW);
+    await syncOnce(desktop, [canvas], google, NOW);
+    expect(google.calendars.size).toBe(1);
+    expect(google.summaries().sort()).toEqual(["Backpack: CS 169A · HW 3", "Backpack: EECS 106A · Lab 4"]);
+  });
+
+  it("keeps your own events when removing the extra calendar's copies", async () => {
+    const [laptopView, desktopView] = [{ data: {} }, { data: {} }];
+    const [laptop, desktop] = [computer(laptopView), computer(desktopView)];
+    const google = new FakeCalendar();
+    await syncOnce(laptop, [canvas], google, NOW);
+    const laptopCalendar = [...google.calendars.keys()][0]!;
+    google.calendars.get(laptopCalendar)!.events.set("mine", { foreign: true });
+    await syncOnce(desktop, [canvas], google, NOW);
+
+    laptopView.data = desktopView.data;
+    await syncOnce(laptop, [canvas], google, NOW);
+    expect(google.calendars.get(laptopCalendar)!.events.size).toBe(1);
+    expect(google.summaries().sort()).toEqual(["(user event)", "Backpack: CS 169A · HW 3", "Backpack: EECS 106A · Lab 4"]);
+  });
+
+  it("leaves the shared calendar alone while a computer can't read one of your sites yet", async () => {
+    const synced = { data: {} };
+    const [laptop, desktop] = [computer(synced), computer(synced)];
+    const google = new FakeCalendar();
+    const gradescope: Source = {
+      platform: "gradescope",
+      fetch: async () => [
+        {
+          ...canvasAssignment("5001", "HW3: Ruby Intro", "2026-10-24T06:59:00Z"),
+          platform: "gradescope",
+          course: { platform: "gradescope", id: "880", name: "CS 169A Fall 2026" },
+        },
+      ],
+    };
+    await syncOnce(laptop, [canvas, gradescope], google, NOW);
+    const before = google.summaries().sort();
+
+    // Not signed in to Gradescope on the desktop yet.
+    const signedOut: Source = { platform: "gradescope", fetch: () => Promise.reject(new Error("Sign in to gradescope.com")) };
+    google.calls = [];
+    await expect(syncOnce(desktop, [canvas, signedOut], google, NOW)).rejects.toThrow(/until this computer can read Gradescope/);
+    expect(google.calls).toEqual([]);
+    expect(google.summaries().sort()).toEqual(before);
+  });
+
+  it("still syncs from a single computer while one of its sites can't be read", async () => {
+    const s = store();
+    const google = new FakeCalendar();
+    const signedOut: Source = { platform: "gradescope", fetch: () => Promise.reject(new Error("Sign in to gradescope.com")) };
+    expect(await syncOnce(s, [canvas, signedOut], google, NOW)).toMatchObject({ created: 2 });
+    expect(s.state.errors).toEqual({ gradescope: "Sign in to gradescope.com" });
   });
 });
 
