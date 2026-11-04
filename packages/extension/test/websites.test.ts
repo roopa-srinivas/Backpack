@@ -4,6 +4,7 @@ import { canvasApi } from "../src/sources/canvas.js";
 import {
   findCourseWebsite,
   launchTargets,
+  linksInAnnouncements,
   linksInHtml,
   pickWebsite,
   RECHECK_MS,
@@ -41,6 +42,7 @@ const coursePaths = (id: number | string) => ({
   syllabus: `/api/v1/courses/${id}?include[]=syllabus_body`,
   front: `/api/v1/courses/${id}/front_page`,
   modules: `/api/v1/courses/${id}/modules?include[]=items&per_page=100`,
+  announcements: `/api/v1/courses/${id}/discussion_topics?only_announcements=true&per_page=100`,
 });
 const COURSES = "/api/v1/users/self/courses?enrollment_state=active&per_page=100";
 
@@ -160,6 +162,32 @@ describe("pickWebsite", () => {
   });
 });
 
+describe("linksInAnnouncements", () => {
+  const cs160 = course("COMPSCI 160", "1600");
+
+  it("counts an announcement's title for the one site it links", () => {
+    const candidates = linksInAnnouncements([
+      {
+        title: "Our course website is live",
+        message: `<p>Check it out <a href="https://sites.google.com/berkeley.edu/hci-fa26">here</a>, and the
+          <a href="https://sites.google.com/berkeley.edu/hci-fa26/schedule">schedule</a>.</p>`,
+      },
+    ]);
+    expect(pickWebsite(candidates, cs160, HOST)?.url).toBe("https://sites.google.com/berkeley.edu/hci-fa26");
+  });
+
+  it("doesn't credit the title to any one link when the announcement links several sites", () => {
+    const candidates = linksInAnnouncements([
+      {
+        title: "Course website and section sign-ups",
+        message: `<p><a href="https://forms.office.com/r/abc">Sign up</a> · <a href="https://sites.google.com/view/hci">here</a></p>`,
+      },
+    ]);
+    expect(candidates.every((c) => !/website/i.test(c.context))).toBe(true);
+    expect(pickWebsite(candidates, cs160, HOST)).toBeNull();
+  });
+});
+
 describe("launchTargets", () => {
   it("reads the destination from an LTI 1.1 Redirect Tool launch form", () => {
     const html = `<form action="https://www.edu-apps.org/redirect" method="POST" target="tool_content" id="tool_form">
@@ -217,6 +245,27 @@ describe("findCourseWebsite", () => {
       },
     });
     expect(await findCourseWebsite(canvasApi(HOST, fetchImpl), CS61A)).toEqual({ url: "https://cs61a.org/", where: "Modules" });
+  });
+
+  it("finds a website the professor linked in an announcement", async () => {
+    const cs160 = course("COMPSCI 160", "1600");
+    const { fetchImpl } = fakeCanvas({
+      [coursePaths(1600).announcements]: {
+        json: [
+          { title: "Midterm logistics", message: `<p>Join on <a href="https://berkeley.zoom.us/j/1">Zoom</a>.</p>` },
+          {
+            title: "Welcome to CS 160!",
+            message: `<p>Hi everyone! All course materials are on
+              <a href="https://inst.eecs.berkeley.edu/~cs160/fa26/">our website</a>.
+              Questions go on <a href="https://edstem.org/us/courses/9">Ed</a>.</p>`,
+          },
+        ],
+      },
+    });
+    expect(await findCourseWebsite(canvasApi(HOST, fetchImpl), cs160)).toEqual({
+      url: "https://inst.eecs.berkeley.edu/~cs160/fa26/",
+      where: "Announcements",
+    });
   });
 
   it("says null when there's no website, but undefined when it couldn't finish reading", async () => {

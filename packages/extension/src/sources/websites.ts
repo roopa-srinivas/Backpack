@@ -7,11 +7,11 @@ import { CanvasError, canvasApi, fetchCanvasCourses, toCourse, type CanvasApi } 
 /**
  * Finds each bCourses course's own website. Course staff link it from a
  * navigation tab (often a "Course Website" redirect tool), the Home page, the
- * Syllabus, or Modules, so Backpack reads those and keeps the link most
- * likely to be the course's site.
+ * Syllabus, Modules, or an announcement, so Backpack reads those and keeps
+ * the link most likely to be the course's site.
  */
 
-export type WhereFound = "Navigation tab" | "Home page" | "Syllabus" | "Modules";
+export type WhereFound = "Navigation tab" | "Home page" | "Syllabus" | "Modules" | "Announcements";
 
 /** A link that might be the course website, with the words around it. */
 export interface Candidate {
@@ -27,7 +27,8 @@ export interface Candidate {
  */
 export const RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
 
-const WHERE_ORDER: WhereFound[] = ["Navigation tab", "Home page", "Syllabus", "Modules"];
+// Announcements come last: they link to the most other things.
+const WHERE_ORDER: WhereFound[] = ["Navigation tab", "Home page", "Syllabus", "Modules", "Announcements"];
 
 const WEBSITE_WORDS = /\b(course|class)[\s-]*(web[\s-]*)?(site|page|homepage)\b|\bwebsite\b|\bhome[\s-]*page\b/i;
 
@@ -225,6 +226,25 @@ interface CanvasTab {
   hidden?: boolean;
 }
 
+interface CanvasAnnouncement {
+  title: string;
+  message?: string | null;
+}
+
+/**
+ * Links in announcements. An announcement titled like "Course website is up"
+ * that links one site gives that link its title as context too; with several
+ * links, the title can't say which one it means.
+ */
+export function linksInAnnouncements(announcements: CanvasAnnouncement[]): Candidate[] {
+  return announcements.flatMap((announcement) => {
+    const links = linksInHtml(announcement.message, "Announcements");
+    const sites = new Set(links.map((l) => new URL(l.url).hostname));
+    if (sites.size !== 1) return links;
+    return links.map((l) => ({ ...l, context: `${squash(announcement.title)} ${l.context}` }));
+  });
+}
+
 interface CanvasModule {
   items?: { type: string; title: string; external_url?: string }[];
 }
@@ -250,11 +270,16 @@ export async function findCourseWebsite(
   };
 
   const id = course.id;
-  const [tabs, details, frontPage, modules] = await Promise.all([
+  const [tabs, details, frontPage, modules, announcements] = await Promise.all([
     read(() => api.getAll<CanvasTab>(`/api/v1/courses/${id}/tabs`), []),
     read(() => api.get<{ syllabus_body?: string | null }>(`/api/v1/courses/${id}?include[]=syllabus_body`), {}),
     read(() => api.get<{ body?: string | null }>(`/api/v1/courses/${id}/front_page`), {}),
     read(() => api.getAll<CanvasModule>(`/api/v1/courses/${id}/modules?include[]=items&per_page=100`), []),
+    // The course's own announcement list has no date limit, unlike /api/v1/announcements (last 14 days).
+    read(
+      () => api.getAll<CanvasAnnouncement>(`/api/v1/courses/${id}/discussion_topics?only_announcements=true&per_page=100`),
+      [],
+    ),
   ]);
 
   const candidates: Candidate[] = [];
@@ -271,6 +296,7 @@ export async function findCourseWebsite(
     const url = item.type === "ExternalUrl" ? absolute(item.external_url) : null;
     if (url) candidates.push({ url, context: item.title, where: "Modules" });
   }
+  candidates.push(...linksInAnnouncements(announcements));
 
   const best = pickWebsite(candidates, course, api.host);
   if (best) return { url: best.url, where: best.where };
