@@ -165,3 +165,33 @@ describe("syncOnce", () => {
     expect(await syncOnce(s, [canvas], google, NOW)).toMatchObject({ created: 2 });
   });
 });
+
+describe("syncOnce with several platforms", () => {
+  it("merges the same homework from Canvas and Gradescope into one event with both links", async () => {
+    const s = store();
+    const google = new FakeCalendar();
+    const gradescope: Source = {
+      platform: "gradescope",
+      fetch: async () => [
+        {
+          platform: "gradescope",
+          id: "5001",
+          course: { platform: "gradescope", id: "880", name: "Software Engineering", code: "CS 169A" },
+          title: "Homework 3: Ruby Intro",
+          url: "https://www.gradescope.com/courses/880/assignments/5001",
+          dueAt: "2026-10-24T06:59:00Z",
+          submitted: false,
+          kind: "assignment",
+          points: 10,
+        },
+      ],
+    };
+    await syncOnce(s, [canvas, gradescope], google, NOW);
+    expect(google.summaries().sort()).toEqual(["Backpack: CS 169A · Homework 3: Ruby Intro", "Backpack: EECS 106A · Lab 4"]);
+
+    // Unchecking Gradescope: its copy goes, and the Canvas copy takes over the calendar.
+    const result = await syncOnce(s, [canvas], google, NOW);
+    expect(google.summaries().sort()).toEqual(["Backpack: CS 169A · HW 3", "Backpack: EECS 106A · Lab 4"]);
+    expect(result).toMatchObject({ created: 1, removed: 1 });
+  });
+});

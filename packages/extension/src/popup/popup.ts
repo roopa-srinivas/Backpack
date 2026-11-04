@@ -1,6 +1,7 @@
-import type { EventStyle, Settings } from "@backpack/core";
+import { PLATFORM_NAMES, type EventStyle, type Platform, type Settings } from "@backpack/core";
 import type { Reply, Request } from "../background.js";
 import { isGoogleConnected } from "../google/auth.js";
+import { platformInfo } from "../platforms.js";
 import { chromeStore, type State } from "../state.js";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -33,18 +34,40 @@ function cleanHost(input: string): string {
   return input.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase();
 }
 
+const checkboxes = () => [...document.querySelectorAll<HTMLInputElement>("input[data-platform]")];
+
+/** What to show beside a checked platform: ready, or what still needs doing. */
+async function platformStatus(state: State, platform: Platform): Promise<{ text: string; ok?: boolean }> {
+  const info = platformInfo(platform);
+  const origins = info.origins(state);
+  if (!origins) return { text: "Add your address" };
+  if (!(await chrome.permissions.contains({ origins }))) return { text: "Needs permission", ok: false };
+  if (state.errors[platform]) return { text: "Needs attention", ok: false };
+  const count = state.cache[platform]?.assignments.length;
+  return count === undefined ? { text: "Ready", ok: true } : { text: `${count} assignments`, ok: true };
+}
+
 async function render() {
   const state = await chromeStore.load();
   const google = await isGoogleConnected();
   $("google-state").textContent = google ? "Connected" : "Not connected";
-  $("google-state").dataset.ok = String(google);
+  if (google) $("google-state").dataset.ok = "true";
+  else delete $("google-state").dataset.ok;
   $("connect-google").hidden = google;
 
-  const host = state.canvasHost;
-  const canvasAllowed = Boolean(host) && (await chrome.permissions.contains({ origins: [`https://${host}/*`] }));
-  $("canvas-state").textContent = state.errors.canvas ? "Needs attention" : canvasAllowed ? host! : "Not set up";
-  $("canvas-state").dataset.ok = String(canvasAllowed && !state.errors.canvas);
-  $<HTMLInputElement>("canvas-host").value = host ?? "";
+  for (const box of checkboxes()) {
+    const platform = box.dataset.platform as Platform;
+    const on = state.platforms.includes(platform);
+    box.checked = on;
+    const label = document.querySelector<HTMLElement>(`[data-state="${platform}"]`);
+    if (!label) continue;
+    const status = on ? await platformStatus(state, platform) : { text: "" };
+    label.textContent = status.text;
+    if (status.ok === undefined) delete label.dataset.ok;
+    else label.dataset.ok = String(status.ok);
+  }
+  $("canvas-setup").hidden = !state.platforms.includes("canvas");
+  $<HTMLInputElement>("canvas-host").value = state.canvasHost ?? "";
 
   const { settings } = state;
   $<HTMLSelectElement>("calendars").value = settings.calendars;
@@ -57,8 +80,33 @@ async function render() {
 }
 
 function showErrors(state: State) {
-  const problems = Object.entries(state.errors).map(([where, text]) => `${where === "google" ? "Google" : "Canvas"}: ${text}`);
+  const problems = Object.entries(state.errors)
+    .filter(([where]) => where === "google" || state.platforms.includes(where as Platform))
+    .map(([where, text]) => `${where === "google" ? "Google" : PLATFORM_NAMES[where as Platform]}: ${text}`);
   if (problems.length) say(problems.join(" "), "error");
+}
+
+/** Checking a platform asks Chrome for permission to read its site, then turns it on. */
+async function setPlatform(platform: Platform, on: boolean) {
+  const state = await chromeStore.load();
+  const info = platformInfo(platform);
+  // Canvas needs the school's address first; its Allow button asks for permission then.
+  const origins = info.origins(state);
+  if (on && origins && !(await chrome.permissions.request({ origins }))) {
+    say(`Backpack needs permission to read ${info.label}.`, "error");
+    await render();
+    return;
+  }
+  const platforms = on ? [...new Set([...state.platforms, platform])] : state.platforms.filter((p) => p !== platform);
+  await chromeStore.save({ platforms });
+  if (!on) say(`${info.label} removed. Its events go away on the next sync.`, "ok");
+  else if (origins) say(`${info.label} added. Sync to pull in its assignments.`, "ok");
+  else say("Enter your Canvas address below.");
+  await render();
+}
+
+for (const box of checkboxes()) {
+  box.addEventListener("change", () => void setPlatform(box.dataset.platform as Platform, box.checked));
 }
 
 async function saveSettings(patch: Partial<Settings>) {
@@ -86,7 +134,8 @@ $("save-canvas").addEventListener("click", async () => {
     say("Backpack needs permission to read your Canvas assignments.", "error");
     return;
   }
-  await chromeStore.save({ canvasHost: host });
+  const { platforms } = await chromeStore.load();
+  await chromeStore.save({ canvasHost: host, platforms: [...new Set([...platforms, "canvas" as const])] });
   say(`Canvas set to ${host}.`, "ok");
   await render();
 });
