@@ -28,6 +28,16 @@ async function runLimited(jobs: (() => Promise<void>)[], limit = 4): Promise<voi
   await Promise.all(Array.from({ length: Math.min(limit, jobs.length) }, worker));
 }
 
+/**
+ * Some sites stop showing a deadline once it has passed (PrairieLearn drops
+ * the credit schedule when no credit is left). Keep the date from the last
+ * read so the event stays put instead of vanishing.
+ */
+export function keepKnownDueDates(fresh: Assignment[], previous: Assignment[]): Assignment[] {
+  const known = new Map(previous.filter((a) => a.dueAt).map((a) => [a.id, a.dueAt]));
+  return fresh.map((a) => (a.dueAt === null && known.has(a.id) ? { ...a, dueAt: known.get(a.id)! } : a));
+}
+
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
@@ -42,7 +52,10 @@ export async function syncOnce(store: Store, sources: Source[], calendar: Calend
   // A platform that fails keeps its last good read, so its events stay put.
   for (const source of sources) {
     try {
-      cache[source.platform] = { fetchedAt: now, assignments: await source.fetch() };
+      cache[source.platform] = {
+        fetchedAt: now,
+        assignments: keepKnownDueDates(await source.fetch(), state.cache[source.platform]?.assignments ?? []),
+      };
     } catch (error) {
       errors[source.platform] = message(error);
       const previous = state.cache[source.platform];

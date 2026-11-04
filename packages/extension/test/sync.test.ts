@@ -195,3 +195,16 @@ describe("syncOnce with several platforms", () => {
     expect(result).toMatchObject({ created: 1, removed: 1 });
   });
 });
+
+describe("keepKnownDueDates", () => {
+  it("keeps a deadline a site stopped showing, and nothing else", async () => {
+    const { keepKnownDueDates } = await import("../src/sync.js");
+    const before = [canvasAssignment("1", "HW 3", "2026-10-24T06:59:00Z"), canvasAssignment("2", "Lab 4", "2026-10-22T06:59:00Z")];
+    const after = [canvasAssignment("1", "HW 3", null), canvasAssignment("2", "Lab 4", "2026-10-29T06:59:00Z"), canvasAssignment("3", "HW 4", null)];
+    expect(keepKnownDueDates(after, before).map((a) => a.dueAt)).toEqual([
+      "2026-10-24T06:59:00Z",
+      "2026-10-29T06:59:00Z",
+      null,
+    ]);
+  });
+});

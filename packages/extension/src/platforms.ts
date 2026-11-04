@@ -14,6 +14,11 @@ export interface PlatformInfo {
   origins(state: State): string[] | null;
 }
 
+/** The shared PrairieLearn server most schools, Berkeley included, use. */
+export const DEFAULT_PRAIRIELEARN_HOST = "us.prairielearn.com";
+
+export const prairielearnHost = (state: State) => state.prairielearnHost || DEFAULT_PRAIRIELEARN_HOST;
+
 export const PLATFORMS: PlatformInfo[] = [
   {
     platform: "canvas",
@@ -30,8 +35,8 @@ export const PLATFORMS: PlatformInfo[] = [
   {
     platform: "prairielearn",
     label: "PrairieLearn",
-    available: false,
-    origins: () => null,
+    available: true,
+    origins: (state) => [`https://${prairielearnHost(state)}/*`],
   },
 ];
 

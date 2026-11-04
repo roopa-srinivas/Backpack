@@ -1,9 +1,10 @@
 import type { Assignment, Platform } from "@backpack/core";
 import { chromeTokenSource } from "./google/auth.js";
 import { CalendarClient } from "./google/calendar.js";
-import { platformInfo } from "./platforms.js";
+import { platformInfo, prairielearnHost } from "./platforms.js";
 import { fetchCanvas } from "./sources/canvas.js";
 import { fetchGradescope } from "./sources/gradescope.js";
+import { fetchPrairieLearn } from "./sources/prairielearn.js";
 import { chromeStore, type State } from "./state.js";
 import { syncOnce, type Source } from "./sync.js";
 
@@ -16,6 +17,7 @@ export type Reply = { ok: true } | { ok: false; error: string };
 const READERS: Partial<Record<Platform, (state: State) => Promise<Assignment[]>>> = {
   canvas: (state) => fetchCanvas(state.canvasHost!),
   gradescope: () => fetchGradescope(),
+  prairielearn: (state) => fetchPrairieLearn(prairielearnHost(state)),
 };
 
 /**

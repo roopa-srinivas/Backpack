@@ -16,6 +16,8 @@ export interface State {
   platforms: Platform[];
   /** The school's Canvas host, e.g. "bcourses.berkeley.edu"; null until set up. */
   canvasHost: string | null;
+  /** The school's PrairieLearn host; null means the shared us.prairielearn.com. */
+  prairielearnHost?: string | null;
   /** Backpack's calendars by key ("all", "course:cs169a", ...). */
   calendars: Record<string, { id: string; name: string }>;
   /** The last good read from each platform, used when a later read fails. */
