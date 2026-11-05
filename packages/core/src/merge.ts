@@ -109,18 +109,36 @@ export interface LinkedCourse extends CourseIdentity {
   alsoKnownAs: CourseIdentity[];
 }
 
-/** Disjoint sets over course keys. */
+/** Two classes whose titles both say something and share no word are different classes. */
+function titlesConflict(a: Set<string> | undefined, b: Set<string> | undefined): boolean {
+  return Boolean(a && b && a.size >= 2 && b.size >= 2 && ![...a].some((w) => b.has(w)));
+}
+
+/**
+ * Disjoint sets over course keys, carrying each group's title words. Joins
+ * Backpack makes on its own are refused when the titles disagree ("User
+ * Interface Design" and "Software Engineering"), whatever the codes suggest;
+ * joins the student asked for always happen.
+ */
 class Groups {
   private parent = new Map<string, string>();
+  private titles = new Map<string, Set<string>>();
   find(key: string): string {
     let root = key;
     while (this.parent.has(root) && this.parent.get(root) !== root) root = this.parent.get(root)!;
     this.parent.set(key, root);
     return root;
   }
-  join(a: string, b: string) {
+  addTitle(key: string, words: Set<string>) {
+    const root = this.find(key);
+    this.titles.set(root, new Set([...(this.titles.get(root) ?? []), ...words]));
+  }
+  join(a: string, b: string, { force = false } = {}) {
     const [ra, rb] = [this.find(a), this.find(b)];
-    if (ra !== rb) this.parent.set(ra, rb);
+    if (ra === rb) return;
+    if (!force && titlesConflict(this.titles.get(ra), this.titles.get(rb))) return;
+    this.parent.set(ra, rb);
+    this.titles.set(rb, new Set([...(this.titles.get(ra) ?? []), ...(this.titles.get(rb) ?? [])]));
   }
 }
 
@@ -149,12 +167,15 @@ function titlesAgree(a: Set<string>, b: Set<string>): boolean {
  *   ("Introduction to Robotics");
  * - one is the other's number without its letter, in the same department
  *   and term (CS 169 and CS 169A), and no other lettered version is around;
+ * - their numbers match in the same term and one department is the other
+ *   written short (PHYS 7A and PHYSICS 7A, EE 16A and EECS 16A);
  * - one has no code at all ("Robotics" on Gradescope) and it shares
  *   assignments with exactly one course;
  * - the student said so (`merges`).
  *
  * Matching homework alone never joins two courses with codes: CHEM 1A and
- * MATH 1A can both have an "HW 1" due every Friday.
+ * MATH 1A can both have an "HW 1" due every Friday. And none of these joins
+ * happens between courses whose titles disagree.
  */
 function courseIdentities(
   assignments: Assignment[],
@@ -176,46 +197,58 @@ function courseIdentities(
 
   // What each course key is known by, across all its platform courses.
   interface KeyInfo {
+    dept: string | null;
     number: string | null;
     crossListed: boolean;
     title: Set<string>;
     term: Term | null;
   }
   const info = new Map<string, KeyInfo>();
+  const codesOf = new Map<string, ReturnType<typeof courseCodes>>();
   for (const [course, identity] of identities) {
     const sample = byCourse.get(course)![0]!.course;
     const pinned = Boolean(aliases[`${sample.platform}:${sample.id}`]);
     const codes = pinned ? [] : courseCodes(sample);
+    codesOf.set(course, codes);
     const mine = codes.find((c) => c.key === identity.key);
-    // Codes listed together in one name are one class when they're the same
-    // number ("EECS C106A/MEC ENG C106A") or one adds a letter ("CS 169" and
-    // "CS169A"). Other pairs, like CS 61A and CS 88 sharing a site, stay apart.
-    const sameNumber = (a: string, b: string) => a === b || (/^\d+$/.test(a) && new RegExp(`^${a}[a-z]$`).test(b));
+    const known = info.get(identity.key);
+    info.set(identity.key, {
+      dept: mine?.dept ?? known?.dept ?? null,
+      number: mine?.number ?? known?.number ?? null,
+      crossListed: Boolean(known?.crossListed) || codes.some((c) => c.crossListed),
+      title: new Set([...(known?.title ?? []), ...courseTitleWords(sample)]),
+      term: known?.term ?? courseTerm(sample),
+    });
+  }
+  for (const [key, { title }] of info) groups.addTitle(key, title);
+
+  // Codes listed together in one name are one class when they're the same
+  // number ("EECS C106A/MEC ENG C106A") or one adds a letter ("CS 169" and
+  // "CS169A"). Other pairs, like CS 61A and CS 88 sharing a site, stay apart.
+  const sameNumber = (a: string, b: string) => a === b || (/^\d+$/.test(a) && new RegExp(`^${a}[a-z]$`).test(b));
+  for (const [course, identity] of identities) {
+    const codes = codesOf.get(course)!;
+    const mine = codes.find((c) => c.key === identity.key);
     for (const code of codes) {
       if (!mine || !(sameNumber(code.number, mine.number) || sameNumber(mine.number, code.number))) continue;
       if (!labels.has(code.key)) labels.set(code.key, code.label);
       groups.join(code.key, identity.key);
     }
-    const known = info.get(identity.key);
-    const term = courseTerm(sample);
-    info.set(identity.key, {
-      number: mine?.number ?? known?.number ?? null,
-      crossListed: Boolean(known?.crossListed) || codes.some((c) => c.crossListed),
-      title: new Set([...(known?.title ?? []), ...courseTitleWords(sample)]),
-      term: known?.term ?? term,
-    });
   }
 
   const keyed = [...info].filter(([, i]) => i.number);
   const sameTerm = (a: KeyInfo, b: KeyInfo) =>
     !a.term || !b.term || (a.term.season === b.term.season && a.term.year === b.term.year);
   const department = (key: string, number: string) => key.slice(0, key.length - number.length);
+  const shortFor = (a: string | null, b: string | null) =>
+    Boolean(a && b && a !== b && Math.min(a.length, b.length) >= 2 && (a.startsWith(b) || b.startsWith(a)));
 
-  // Same number, different department: cross-listed, or the same title.
+  // Same number, different department: cross-listed, the same title, or one
+  // department written short (PHYS / PHYSICS, EE / EECS).
   for (const [i, [keyA, a]] of keyed.entries()) {
     for (const [keyB, b] of keyed.slice(i + 1)) {
       if (keyA === keyB || a.number !== b.number || !sameTerm(a, b)) continue;
-      if (a.crossListed || b.crossListed || titlesAgree(a.title, b.title)) groups.join(keyA, keyB);
+      if (a.crossListed || b.crossListed || titlesAgree(a.title, b.title) || shortFor(a.dept, b.dept)) groups.join(keyA, keyB);
     }
   }
 
@@ -254,7 +287,7 @@ function courseIdentities(
 
   for (const [from, to] of Object.entries(merges)) {
     if (!labels.has(to)) continue;
-    groups.join(from, to);
+    groups.join(from, to, { force: true });
   }
 
   // One name per class, picked the same way every time so the class keeps

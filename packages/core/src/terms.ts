@@ -24,15 +24,18 @@ const SEASON_WORDS: Record<string, Term["season"]> = {
 };
 
 /**
- * Finds a term in text like "Fall 2026", "2026 Fall", "Fall 26", "Fall26",
- * "FA26" or "CS 61C: Great Ideas, Spring 2026".
+ * Finds a term in text, however a site writes it: "Fall 2026", "2026 Fall",
+ * "Fall, 2026", "Fall Semester 2026", "Summer Session A 2026", "Spring
+ * Quarter 2027", "Fall 26", "Fall26", "Fall '26", "FA26", or inside a
+ * longer name like "CS 61C: Great Ideas, Spring 2026".
  */
 export function parseTerm(text: string | null | undefined): Term | null {
   if (!text) return null;
   const words = "(winter|spring|summer|fall|autumn|wi|sp|su|fa)";
+  const kind = "(?:[\\s,]+(?:semester|term|quarter|session(?:\\s+[a-z])?))?";
   const match =
-    new RegExp(`\\b${words}\\s*'?(\\d{4}|\\d{2})\\b`, "i").exec(text) ??
-    new RegExp(`\\b(\\d{4})\\s+${words}\\b`, "i").exec(text);
+    new RegExp(`\\b${words}${kind}[\\s,]*'?(\\d{4}|\\d{2})\\b`, "i").exec(text) ??
+    new RegExp(`\\b(\\d{4})[\\s,]+${words}\\b`, "i").exec(text);
   if (!match) return null;
   const [word, year] = /^\d/.test(match[1]!) ? [match[2]!, match[1]!] : [match[1]!, match[2]!];
   return { season: SEASON_WORDS[word.toLowerCase()]!, year: year.length === 2 ? 2000 + Number(year) : Number(year) };

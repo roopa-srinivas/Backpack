@@ -227,11 +227,11 @@ describe("classes with several names", () => {
 
   it("finds every code in a cross-listed name, skipping section labels", () => {
     expect(courseCodes({ platform: "canvas", id: "1", name: "EECS C106A/MEC ENG C106A - LEC 001" })).toEqual([
-      { key: "eecs106a", label: "EECS 106A", number: "106a", crossListed: true },
-      { key: "me106a", label: "ME 106A", number: "106a", crossListed: true },
+      { key: "eecs106a", label: "EECS 106A", dept: "eecs", number: "106a", crossListed: true },
+      { key: "me106a", label: "ME 106A", dept: "me", number: "106a", crossListed: true },
     ]);
     expect(courseCodes({ platform: "canvas", id: "2", name: "COMPSCI 61A - LEC 001", code: "COMPSCI 61A" })).toEqual([
-      { key: "cs61a", label: "CS 61A", number: "61a", crossListed: false },
+      { key: "cs61a", label: "CS 61A", dept: "cs", number: "61a", crossListed: false },
     ]);
   });
 
