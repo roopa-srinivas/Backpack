@@ -1,5 +1,5 @@
 import { DEFAULT_PLATFORM_PRIORITY } from "./merge.js";
-import type { Platform } from "./types.js";
+import type { AssignmentKind, Platform } from "./types.js";
 
 /** Google Calendar's event color ids ("1" lavender ... "11" tomato). */
 export type EventColor = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11";
@@ -30,8 +30,27 @@ export type EventStyle =
 export interface CourseSettings {
   /** Replaces the detected label, e.g. "Robotics" instead of "EECS 106A". */
   label?: string;
-  color?: EventColor;
+  /** Null means the student chose no color; unset means Backpack picks one. */
+  color?: EventColor | null;
   hidden?: boolean;
+}
+
+/** How one kind of work (exams, labs, ...) looks, whatever the course. */
+export interface KindSettings {
+  /** Used instead of the course color. */
+  color?: EventColor;
+  /** Popup reminders, in minutes before; used instead of the general reminders. */
+  reminders?: number[];
+  /** Put before the title, e.g. "🎯". */
+  emoji?: string;
+}
+
+/** Colors that show where work stands; they win over kind and course colors. */
+export interface StatusColors {
+  submitted?: EventColor;
+  /** For work not yet turned in that's due within `dueSoonHours`, or overdue. */
+  dueSoon?: EventColor;
+  dueSoonHours: number;
 }
 
 export interface Settings {
@@ -49,6 +68,8 @@ export interface Settings {
   /** IANA time zone used for all-day dates, e.g. "America/Los_Angeles". */
   timeZone: string;
   courses: Record<string, CourseSettings>;
+  kinds: Partial<Record<AssignmentKind, KindSettings>>;
+  statusColors: StatusColors;
   /** Pins a platform course ("canvas:1234") to a course label when names don't line up. */
   courseAliases: Record<string, string>;
   platformPriority: Platform[];
@@ -64,7 +85,33 @@ export function defaultSettings(timeZone = Intl.DateTimeFormat().resolvedOptions
     pastDays: 7,
     timeZone,
     courses: {},
+    kinds: {},
+    statusColors: { dueSoonHours: 24 },
     courseAliases: {},
     platformPriority: [...DEFAULT_PLATFORM_PRIORITY],
   };
+}
+
+/**
+ * Colors given to courses automatically, in order. Tomato and Graphite are
+ * left out: they read as "due soon" and "done".
+ */
+export const COURSE_PALETTE: EventColor[] = ["7", "6", "2", "3", "5", "9", "4", "10", "1"];
+
+/**
+ * Gives each course without a color one that no other course is using; with
+ * more courses than colors, they're reused in order. Returns null when
+ * nothing changed.
+ */
+export function assignCourseColors(settings: Settings, courseKeys: string[]): Settings | null {
+  const courses = { ...settings.courses };
+  let changed = false;
+  for (const key of [...new Set(courseKeys)].sort()) {
+    if (courses[key]?.color !== undefined) continue;
+    const taken = new Set(Object.values(courses).map((c) => c.color));
+    const color = COURSE_PALETTE.find((c) => !taken.has(c)) ?? COURSE_PALETTE[Object.keys(courses).length % COURSE_PALETTE.length]!;
+    courses[key] = { ...courses[key], color };
+    changed = true;
+  }
+  return changed ? { ...settings, courses } : null;
 }

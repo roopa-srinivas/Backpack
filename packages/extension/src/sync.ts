@@ -1,4 +1,5 @@
 import {
+  assignCourseColors,
   buildEvents,
   mergeAssignments,
   planSync,
@@ -78,7 +79,13 @@ export async function syncOnce(store: Store, sources: Source[], calendar: Calend
       priority: state.settings.platformPriority,
       courseAliases: state.settings.courseAliases,
     });
-    const desired = buildEvents(tasks, state.settings, now);
+    // New courses get a color. Settings are read fresh, so a change made on
+    // the settings page while this sync was reading isn't overwritten.
+    const latestSettings = (await store.load()).settings;
+    const colored = assignCourseColors(latestSettings, tasks.map((t) => t.courseKey));
+    if (colored) await store.save({ settings: colored });
+    const settings = colored ?? latestSettings;
+    const desired = buildEvents(tasks, settings, now);
 
     // The calendar list is shared with your other computers; one may have
     // added a calendar while this one was reading.

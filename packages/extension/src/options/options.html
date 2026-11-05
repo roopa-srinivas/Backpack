@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark light" />
+<title>Personalize Backpack</title>
+<link rel="stylesheet" href="popup.css" />
+<link rel="stylesheet" href="options.css" />
+</head>
+<body class="options">
+<header>
+  <img src="icons/icon-32.png" width="22" height="22" alt="" />
+  <h1>Personalize Backpack</h1>
+</header>
+
+<main>
+<section>
+  <h2>Classes</h2>
+  <p class="muted hint lead">Each class gets its own color. Rename a class, change its color, or hide it from your calendar.</p>
+  <ul id="courses" class="rows"></ul>
+  <p id="no-courses" class="muted hint" hidden>Sync once from the Backpack menu, and your classes show up here.</p>
+</section>
+
+<section>
+  <h2>Kinds of work</h2>
+  <p class="muted hint lead">Give a kind of work its own color instead of the class's, an emoji at the start of its title, or its own reminders.</p>
+  <div class="field">
+    <label for="reminders">Reminders for everything</label>
+    <select id="reminders"></select>
+  </div>
+  <ul id="kinds" class="rows"></ul>
+  <button id="suggest-emoji" type="button">Add suggested emoji</button>
+</section>
+
+<section>
+  <h2>Where work stands</h2>
+  <p class="muted hint lead">These colors win over kind and class colors.</p>
+  <div class="field">
+    <span class="label">Submitted work</span>
+    <div id="submitted-color"></div>
+  </div>
+  <div class="field">
+    <span class="label">Not turned in and due within <select id="due-soon-hours" aria-label="Due within"></select>, or overdue</span>
+    <div id="due-soon-color"></div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <p id="message" role="status" aria-live="polite"></p>
+  <button id="apply" type="button" class="primary">Apply to calendar</button>
+</footer>
+<script src="options.js" type="module"></script>
+</body>
+</html>

@@ -5,6 +5,7 @@
   "description": "Puts your Canvas, Gradescope and PrairieLearn assignments on Google Calendar, formatted your way.",
   "minimum_chrome_version": "120",
   "action": { "default_popup": "popup.html", "default_title": "Backpack" },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
   "background": { "service_worker": "background.js", "type": "module" },
   "permissions": ["storage", "alarms", "identity"],
   "host_permissions": ["https://www.googleapis.com/*"],

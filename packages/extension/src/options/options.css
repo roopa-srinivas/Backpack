@@ -1,0 +1,24 @@
+/* Settings page: the menu's styles, laid out for a full tab. */
+body.options { width: auto; max-width: 680px; margin: 0 auto; padding-bottom: 1rem; }
+body.options section { padding: 1.1rem 1.2rem; }
+body.options header, body.options footer { padding-left: 1.2rem; padding-right: 1.2rem; }
+body.options footer { position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--border); }
+.label { font-size: 0.78rem; color: var(--ink2); }
+.rows { list-style: none; display: grid; gap: 0.9rem; margin-bottom: 0.8rem; }
+.rows li { display: grid; gap: 0.4rem; }
+.rows .top { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.rows .name { font-weight: 600; min-width: 6.5rem; }
+.rows .top input[type="text"] { flex: 1; min-width: 8rem; }
+.rows .emoji { width: 3.2rem !important; flex: none !important; min-width: 0 !important; text-align: center; }
+.rows .top select { width: auto; flex: 1; min-width: 10rem; }
+.chip { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600; color: #fff; background: var(--ink2); white-space: nowrap; }
+.chip[data-none] { background: transparent; color: var(--ink2); border: 1px dashed var(--border); }
+.hide { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--ink2); }
+.hide input { width: auto; margin: 0; accent-color: var(--accent); }
+li[data-hidden] .chip, li[data-hidden] .swatches { opacity: 0.4; }
+.swatches { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.swatch { width: 1.35rem; height: 1.35rem; padding: 0; border-radius: 50%; border: 2px solid transparent; }
+.swatch[aria-checked="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
+.swatch.none { width: auto; height: 1.35rem; border-radius: 999px; padding: 0 0.55rem; font-size: 0.72rem; background: var(--surface); border: 1px solid var(--border); color: var(--ink2); }
+.swatch.none[aria-checked="true"] { color: var(--ink); }
+.field .label select { width: auto; display: inline-block; padding: 0.15rem 0.3rem; }

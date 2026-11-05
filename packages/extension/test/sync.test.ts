@@ -147,6 +147,22 @@ describe("syncOnce", () => {
     expect(google.summaries().sort()).toEqual(["Backpack: CS 169A · Homework 03: Ruby Intro", "Backpack: EECS 106A · Lab 4"]);
   });
 
+  it("gives each course its own color, and keeps a color the student picked", async () => {
+    const s = store();
+    const google = new FakeCalendar();
+    await syncOnce(s, [canvas], google, NOW);
+    const { cs169a, eecs106a } = s.state.settings.courses;
+    expect(cs169a?.color).toBeTruthy();
+    expect(eecs106a?.color).toBeTruthy();
+    expect(cs169a?.color).not.toBe(eecs106a?.color);
+
+    await s.save({ settings: { ...s.state.settings, courses: { ...s.state.settings.courses, cs169a: { color: "11" } } } });
+    await syncOnce(s, [canvas], google, NOW);
+    expect(s.state.settings.courses.cs169a?.color).toBe("11");
+    const colors = [...google.calendars.values()].flatMap((c) => [...c.events.values()]).map((e) => ("foreign" in e ? null : e.colorId));
+    expect(colors.sort()).toEqual(["11", eecs106a!.color].sort());
+  });
+
   it("keeps the last good events when Canvas can't be reached", async () => {
     const s = store();
     const google = new FakeCalendar();

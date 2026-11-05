@@ -307,6 +307,8 @@ $("title-template").addEventListener("change", (e) => {
   if (value) void saveSettings({ titleTemplate: value });
 });
 
+$("personalize").addEventListener("click", () => void chrome.runtime.openOptionsPage());
+
 $("sync").addEventListener("click", async () => {
   const button = $<HTMLButtonElement>("sync");
   button.disabled = true;
