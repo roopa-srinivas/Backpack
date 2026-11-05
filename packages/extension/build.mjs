@@ -44,7 +44,11 @@ function extensionKey() {
 
 rmSync(out, { recursive: true, force: true });
 await build({
-  entryPoints: { background: join(here, "src/background.ts"), popup: join(here, "src/popup/popup.ts") },
+  entryPoints: {
+    background: join(here, "src/background.ts"),
+    popup: join(here, "src/popup/popup.ts"),
+    options: join(here, "src/options/options.ts"),
+  },
   bundle: true,
   format: "esm",
   target: "chrome120",
@@ -53,6 +57,8 @@ await build({
 });
 cpSync(join(here, "src/popup/popup.html"), join(out, "popup.html"));
 cpSync(join(here, "src/popup/popup.css"), join(out, "popup.css"));
+cpSync(join(here, "src/options/options.html"), join(out, "options.html"));
+cpSync(join(here, "src/options/options.css"), join(out, "options.css"));
 cpSync(join(here, "icons"), join(out, "icons"), { recursive: true });
 
 const clientId = process.env.BACKPACK_GOOGLE_CLIENT_ID ?? readEnvFile().BACKPACK_GOOGLE_CLIENT_ID ?? "";

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildEvents, defaultSettings, mergeAssignments, planSync, renderTitle, type Settings } from "../src/index.js";
+import {
+  assignCourseColors,
+  buildEvents,
+  COURSE_PALETTE,
+  defaultSettings,
+  mergeAssignments,
+  planSync,
+  renderTitle,
+  type Settings,
+} from "../src/index.js";
 import { assignment } from "./helpers.js";
 
 const NOW = Date.parse("2026-10-20T12:00:00Z");
@@ -140,5 +149,70 @@ describe("planSync", () => {
   it("plans one event per task even if a task is listed twice", () => {
     const plan = planSync([a, a, b], []);
     expect(plan.create).toEqual([a, b]);
+  });
+});
+
+describe("personalizing", () => {
+  const event = (overrides: Parameters<typeof assignment>[1], custom: Partial<Settings>, now = NOW) =>
+    buildEvents(mergeAssignments([assignment("gradescope", overrides)]), settings(custom), now)[0]!;
+  const courses = { cs169a: { color: "7" as const } };
+
+  it("colors events by course, unless the student chose no color", () => {
+    expect(event({}, { courses }).body.colorId).toBe("7");
+    expect(event({}, { courses: { cs169a: { color: null } } }).body.colorId).toBeUndefined();
+  });
+
+  it("lets a kind's color win over the course's", () => {
+    const kinds = { exam: { color: "11" as const } };
+    expect(event({ title: "Midterm 1", kind: "exam" }, { courses, kinds }).body.colorId).toBe("11");
+    expect(event({ kind: "assignment" }, { courses, kinds }).body.colorId).toBe("7");
+  });
+
+  it("lets where the work stands win over everything", () => {
+    const statusColors = { submitted: "8" as const, dueSoon: "11" as const, dueSoonHours: 24 };
+    const kinds = { exam: { color: "3" as const } };
+    const due = "2026-10-24T06:59:00Z";
+    // Done: grey, even for an exam in a colored course.
+    expect(event({ dueAt: due, submitted: true, kind: "exam" }, { courses, kinds, statusColors }).body.colorId).toBe("8");
+    // 30 hours out: not due soon yet.
+    expect(event({ dueAt: due }, { courses, statusColors }, Date.parse(due) - 30 * 3_600_000).body.colorId).toBe("7");
+    // 20 hours out, and overdue: due soon.
+    expect(event({ dueAt: due }, { courses, statusColors }, Date.parse(due) - 20 * 3_600_000).body.colorId).toBe("11");
+    expect(event({ dueAt: due }, { courses, statusColors }, Date.parse(due) + 3_600_000).body.colorId).toBe("11");
+    // Submitted work isn't "due soon".
+    const doneSoon = event({ dueAt: due, submitted: true }, { courses, statusColors: { dueSoon: "11", dueSoonHours: 24 } }, Date.parse(due) - 3_600_000);
+    expect(doneSoon.body.colorId).toBe("7");
+  });
+
+  it("puts a kind's emoji before the title, after the check mark", () => {
+    const kinds = { exam: { emoji: "🎯" } };
+    expect(event({ title: "Midterm 1", kind: "exam" }, { kinds }).body.summary).toBe("🎯 CS 169A · Midterm 1");
+    expect(event({ title: "Midterm 1", kind: "exam", submitted: true }, { kinds }).body.summary).toBe("✓ 🎯 CS 169A · Midterm 1");
+    expect(event({ kind: "assignment" }, { kinds }).body.summary).toBe("CS 169A · Homework 3: Ruby Intro");
+  });
+
+  it("uses a kind's own reminders, or none, instead of the general ones", () => {
+    const kinds = { exam: { reminders: [7 * 1440, 1440] }, discussion: { reminders: [] } };
+    const minutes = (e: ReturnType<typeof event>) => e.body.reminders.overrides.map((o) => o.minutes);
+    expect(minutes(event({ kind: "exam" }, { kinds }))).toEqual([10080, 1440]);
+    expect(minutes(event({ kind: "discussion" }, { kinds }))).toEqual([]);
+    expect(minutes(event({ kind: "lab" }, { kinds }))).toEqual([1440, 120]);
+  });
+
+  it("gives new courses distinct colors and leaves chosen ones alone", () => {
+    const start = settings({ courses: { cs61a: { color: COURSE_PALETTE[0]! }, cs70: { color: null } } });
+    const next = assignCourseColors(start, ["cs61a", "cs70", "cs169a", "data100", "cs169a"])!;
+    expect(next.courses.cs61a!.color).toBe(COURSE_PALETTE[0]);
+    expect(next.courses.cs70!.color).toBeNull();
+    const fresh = [next.courses.cs169a!.color, next.courses.data100!.color];
+    expect(new Set([COURSE_PALETTE[0], ...fresh]).size).toBe(3);
+    expect(assignCourseColors(next, ["cs61a", "cs169a"])).toBeNull();
+  });
+
+  it("reuses colors once there are more courses than colors", () => {
+    const keys = Array.from({ length: COURSE_PALETTE.length + 2 }, (_, i) => `c${String(i).padStart(2, "0")}`);
+    const next = assignCourseColors(settings(), keys)!;
+    expect(keys.every((k) => next.courses[k]!.color)).toBe(true);
+    expect(new Set(keys.map((k) => next.courses[k]!.color)).size).toBe(COURSE_PALETTE.length);
   });
 });

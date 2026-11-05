@@ -1,4 +1,4 @@
-import type { Settings } from "./settings.js";
+import type { EventColor, Settings } from "./settings.js";
 import { PLATFORM_NAMES, type Task } from "./types.js";
 
 type EventTime = { date: string } | { dateTime: string; timeZone: string };
@@ -103,6 +103,19 @@ export function fingerprint(text: string): string {
 }
 
 /**
+ * The event's color: where the work stands first (submitted, due soon), then
+ * the kind of work, then the course. Unset ones fall through to the next.
+ */
+export function eventColor(task: Task, settings: Settings, now: number): EventColor | undefined {
+  const status = settings.statusColors;
+  if (task.submitted && status.submitted) return status.submitted;
+  if (!task.submitted && status.dueSoon && task.dueAt && Date.parse(task.dueAt) - now <= status.dueSoonHours * 60 * MINUTE) {
+    return status.dueSoon;
+  }
+  return settings.kinds[task.kind]?.color ?? settings.courses[task.courseKey]?.color ?? undefined;
+}
+
+/**
  * Turns tasks into the calendar events the user's settings ask for. Tasks
  * with no due date, in hidden courses, too far in the past, or submitted
  * (when submitted work is hidden) get no event.
@@ -118,8 +131,11 @@ export function buildEvents(tasks: Task[], settings: Settings, now = Date.now())
     if (task.submitted && settings.submitted === "hide") continue;
 
     const courseLabel = course.label?.trim() || task.courseLabel;
+    const kind = settings.kinds[task.kind] ?? {};
     let summary = renderTitle(settings.titleTemplate, task, courseLabel);
+    if (kind.emoji?.trim()) summary = `${kind.emoji.trim()} ${summary}`;
     if (task.submitted && settings.submitted === "check") summary = `✓ ${summary}`;
+    const color = eventColor(task, settings, now);
 
     const lines = [`Due ${formatDue(due, settings.timeZone)}`];
     if (task.points != null) lines.push(`${task.points} points`);
@@ -133,8 +149,11 @@ export function buildEvents(tasks: Task[], settings: Settings, now = Date.now())
       summary,
       description: lines.join("\n"),
       ...eventTimes(due, settings),
-      ...(course.color ? { colorId: course.color } : {}),
-      reminders: { useDefault: false, overrides: settings.reminders.map((minutes) => ({ method: "popup", minutes })) },
+      ...(color ? { colorId: color } : {}),
+      reminders: {
+        useDefault: false,
+        overrides: (kind.reminders ?? settings.reminders).map((minutes) => ({ method: "popup", minutes })),
+      },
       source: { title: PLATFORM_NAMES[lead.platform], url: lead.url },
     };
     const hash = fingerprint(JSON.stringify(body));
