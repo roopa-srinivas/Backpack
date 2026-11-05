@@ -1,4 +1,15 @@
-import { newestFirst, parseTerm, PLATFORM_NAMES, type EventStyle, type Platform, type Settings } from "@backpack/core";
+import {
+  addCourseToTitle,
+  dropCourseFromTitle,
+  newestFirst,
+  parseTerm,
+  PLATFORM_NAMES,
+  switchCalendars,
+  titleHasCourse,
+  type EventStyle,
+  type Platform,
+  type Settings,
+} from "@backpack/core";
 import type { Reply, Request } from "../background.js";
 import { isGoogleConnected } from "../google/auth.js";
 import { platformInfo } from "../platforms.js";
@@ -75,6 +86,7 @@ async function render() {
   $<HTMLSelectElement>("style").value = settings.style.type;
   $<HTMLSelectElement>("submitted").value = settings.submitted;
   $<HTMLInputElement>("title-template").value = settings.titleTemplate;
+  $<HTMLInputElement>("title-course").checked = titleHasCourse(settings.titleTemplate);
 
   $("last-sync").textContent = state.lastSync ? ago(state.lastSync.at) : "";
   renderWebsites(state);
@@ -319,9 +331,23 @@ $("toggle-earlier-websites").addEventListener("click", () => {
   void render();
 });
 
-$("calendars").addEventListener("change", (e) =>
-  saveSettings({ calendars: (e.target as HTMLSelectElement).value as Settings["calendars"] }),
-);
+$("calendars").addEventListener("change", async (e) => {
+  const calendars = (e.target as HTMLSelectElement).value as Settings["calendars"];
+  const { settings } = await chromeStore.load();
+  const next = switchCalendars(settings, calendars);
+  await chromeStore.save({ settings: next });
+  await render();
+  if (next.titleTemplate === settings.titleTemplate) say("Saved. Sync to apply.");
+  else if (calendars === "perCourse") say("Each class gets its own calendar, so class names are left out of titles (they're in the notes). Sync to apply.");
+  else say("Class names are back in event titles. Sync to apply.");
+});
+
+$("title-course").addEventListener("change", async (e) => {
+  const on = (e.target as HTMLInputElement).checked;
+  const { settings } = await chromeStore.load();
+  await saveSettings({ titleTemplate: on ? addCourseToTitle(settings.titleTemplate) : dropCourseFromTitle(settings.titleTemplate) });
+  await render();
+});
 $("style").addEventListener("change", (e) =>
   saveSettings({ style: STYLES[(e.target as HTMLSelectElement).value as EventStyle["type"]] }),
 );
