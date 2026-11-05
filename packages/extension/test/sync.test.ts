@@ -1,4 +1,4 @@
-import { defaultSettings, type Assignment, type CalendarEventBody } from "@backpack/core";
+import { defaultSettings, type Assignment, type CalendarEventBody, type DueAnswer } from "@backpack/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { initialState, memoryStore, SHARED_KEYS, type State, type Store } from "../src/state.js";
 import { syncOnce, type Calendar, type Source } from "../src/sync.js";
@@ -450,47 +450,110 @@ describe("when a due date moves", () => {
     canvasDue = HW3_FRI;
   });
 
-  it("moves the event when the site you turn it in on moves the date and bCourses hasn't yet", async () => {
+  const answer = async (s: ReturnType<typeof store>, key: string, a: DueAnswer) => {
+    const questions = s.state.dueQuestions;
+    await s.save({ dueQuestions: { ...questions, [key]: { ...questions[key]!, answer: a, answeredAt: Date.now() } } });
+  };
+  const KEY = "gradescope:5001";
+
+  it("keeps the calendar's date and asks when Gradescope moves the date and bCourses hasn't", async () => {
     const s = store();
     const google = new FakeCalendar();
     await syncOnce(s, [canvasOnly, gradescope], google, NOW);
     const eventId = events(google)[0]![0];
 
     gradescopeDue = HW3_MON;
-    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW + 1000)).toMatchObject({ created: 0, updated: 1, removed: 0 });
-    expect(events(google)).toEqual([[eventId, "CS 169A · Homework 3", "2026-10-27T06:59:00.000Z"]]);
+    const result = await syncOnce(s, [canvasOnly, gradescope], google, NOW + 1000);
+    expect(result).toMatchObject({ created: 0, updated: 0, removed: 0, newQuestions: [KEY] });
+    expect(events(google)).toEqual([[eventId, "CS 169A · Homework 3", "2026-10-24T06:59:00.000Z"]]);
+    expect(s.state.dueQuestions[KEY]).toMatchObject({
+      courseLabel: "CS 169A",
+      title: "Homework 3",
+      heldDueAt: HW3_FRI,
+      answer: { kind: "unanswered" },
+      options: [
+        { dueAt: HW3_FRI, platforms: ["canvas"] },
+        { dueAt: HW3_MON, platforms: ["gradescope"] },
+      ],
+    });
 
-    // Still one event on later syncs, while bCourses keeps the old date and once it catches up.
-    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW + 2000)).toMatchObject({ created: 0, updated: 0, removed: 0 });
+    // Asked once: the next sync doesn't ask again.
+    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW + 2000)).toMatchObject({ updated: 0, newQuestions: [] });
+
+    // bCourses catches up: no more disagreement, so the event moves and the question goes.
     canvasDue = HW3_MON;
-    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW + 3000)).toMatchObject({ created: 0, updated: 0, removed: 0 });
+    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW + 3000)).toMatchObject({ created: 0, updated: 1, removed: 0 });
     expect(events(google)).toEqual([[eventId, "CS 169A · Homework 3", "2026-10-27T06:59:00.000Z"]]);
+    expect(s.state.dueQuestions).toEqual({});
   });
 
-  it("moves the event when bCourses moves the date and Gradescope hasn't yet", async () => {
+  it("moves the event to the date you choose, or type in, and doesn't ask again", async () => {
     const s = store();
     const google = new FakeCalendar();
     await syncOnce(s, [canvasOnly, gradescope], google, NOW);
     const eventId = events(google)[0]![0];
-
     canvasDue = HW3_MON;
-    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW + 1000)).toMatchObject({ created: 0, updated: 1, removed: 0 });
+    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW + 1000)).toMatchObject({ updated: 0, newQuestions: [KEY] });
+
+    await answer(s, KEY, { kind: "date", dueAt: HW3_MON, custom: false });
+    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW + 2000)).toMatchObject({ updated: 1, newQuestions: [], dueReminders: [] });
     expect(events(google)).toEqual([[eventId, "CS 169A · Homework 3", "2026-10-27T06:59:00.000Z"]]);
+
+    await answer(s, KEY, { kind: "date", dueAt: "2026-10-28T19:00:00.000Z", custom: true });
+    await syncOnce(s, [canvasOnly, gradescope], google, NOW + 3000);
+    expect(events(google).map((e) => e[2])).toEqual(["2026-10-28T19:00:00.000Z"]);
   });
 
-  it("follows whichever site moved the date most recently", async () => {
+  it("leaves the calendar alone and stops asking when you say not to change it", async () => {
     const s = store();
     const google = new FakeCalendar();
     await syncOnce(s, [canvasOnly, gradescope], google, NOW);
-    canvasDue = HW3_MON;
+    gradescopeDue = HW3_MON;
     await syncOnce(s, [canvasOnly, gradescope], google, NOW + 1000);
-    gradescopeDue = HW3_WED;
-    await syncOnce(s, [canvasOnly, gradescope], google, NOW + 2000);
-    expect(events(google).map((e) => e[2])).toEqual(["2026-10-29T06:59:00.000Z"]);
-    // Moved back on bCourses: that's the newest word now.
-    canvasDue = HW3_FRI;
-    await syncOnce(s, [canvasOnly, gradescope], google, NOW + 3000);
+    await answer(s, KEY, { kind: "keep" });
+    for (const at of [NOW + 2000, NOW + 3 * 86_400_000]) {
+      expect(await syncOnce(s, [canvasOnly, gradescope], google, at)).toMatchObject({ updated: 0, newQuestions: [], dueReminders: [] });
+    }
     expect(events(google).map((e) => e[2])).toEqual(["2026-10-24T06:59:00.000Z"]);
+
+    // A site moving again is something new to ask about. The calendar still shows Friday meanwhile.
+    gradescopeDue = HW3_WED;
+    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW + 4000)).toMatchObject({ updated: 0, newQuestions: [KEY] });
+    expect(s.state.dueQuestions[KEY]).toMatchObject({ heldDueAt: HW3_FRI, answer: { kind: "unanswered" } });
+  });
+
+  it("reminds you around the time you asked, keeping the calendar's date until then", async () => {
+    const s = store();
+    const google = new FakeCalendar();
+    await syncOnce(s, [canvasOnly, gradescope], google, NOW);
+    gradescopeDue = HW3_MON;
+    await syncOnce(s, [canvasOnly, gradescope], google, NOW + 1000);
+    const remindAt = NOW + 2 * 3_600_000;
+    await answer(s, KEY, { kind: "later", remindAt });
+    expect(await syncOnce(s, [canvasOnly, gradescope], google, remindAt - 3_600_000)).toMatchObject({ newQuestions: [], dueReminders: [] });
+    expect(await syncOnce(s, [canvasOnly, gradescope], google, remindAt - 20 * 60_000)).toMatchObject({ newQuestions: [], dueReminders: [KEY] });
+    expect(events(google).map((e) => e[2])).toEqual(["2026-10-24T06:59:00.000Z"]);
+  });
+
+  it("asks about new work the sites disagree on from the start, showing the turn-in site's date meanwhile", async () => {
+    const s = store();
+    const google = new FakeCalendar();
+    canvasDue = "2026-10-24T00:00:00Z"; // Friday 5 PM on bCourses, 11:59 PM on Gradescope
+    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW)).toMatchObject({ created: 1, newQuestions: [KEY] });
+    expect(events(google).map((e) => e[2])).toEqual(["2026-10-24T06:59:00.000Z"]);
+    expect(s.state.dueQuestions[KEY]!.heldDueAt).toBeNull();
+  });
+
+  it("doesn't ask about submitted work, past work, or hidden classes", async () => {
+    canvasDue = HW3_MON;
+    const submitted: Source = { platform: "gradescope", fetch: async () => (await gradescope.fetch()).map((a) => ({ ...a, submitted: true })) };
+    const s1 = store();
+    expect(await syncOnce(s1, [canvasOnly, submitted], new FakeCalendar(), NOW)).toMatchObject({ newQuestions: [] });
+    const s2 = store();
+    expect(await syncOnce(s2, [canvasOnly, gradescope], new FakeCalendar(), Date.parse("2026-10-28T12:00:00Z"))).toMatchObject({ newQuestions: [] });
+    const settings = defaultSettings("America/Los_Angeles");
+    const s3 = memoryStore({ settings: { ...settings, courses: { cs169a: { hidden: true } } } });
+    expect(await syncOnce(s3, [canvasOnly, gradescope], new FakeCalendar(), NOW)).toMatchObject({ newQuestions: [] });
   });
 
   it("moves the event when an extension is approved on Flextensions", async () => {

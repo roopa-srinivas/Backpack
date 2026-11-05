@@ -1,4 +1,4 @@
-import { isEarlierTerm, kindFromTitle, parseTerm, type Assignment, type Course } from "@backpack/core";
+import { isEarlierTerm, kindFromTitle, parseTerm, zonedInstant, type Assignment, type Course } from "@backpack/core";
 import { parse, type HTMLElement } from "node-html-parser";
 
 /**
@@ -67,29 +67,6 @@ export function parseCourseList(html: string, now = Date.now()): FlextensionsCou
 
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-
-/** How far a time zone is ahead of UTC at an instant, in milliseconds. */
-function zoneOffset(instant: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "numeric",
-  }).formatToParts(instant);
-  const get = (type: string) => Number(parts.find((p) => p.type === type)!.value);
-  return Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute")) - Math.floor(instant / 60_000) * 60_000;
-}
-
-/** The instant a wall-clock time in a time zone happens. */
-function zonedInstant(year: number, month: number, day: number, hour: number, minute: number, timeZone: string): number {
-  const wall = Date.UTC(year, month, day, hour, minute);
-  // Twice, so a guess on the far side of a daylight-saving change corrects itself.
-  const first = wall - zoneOffset(wall, timeZone);
-  return wall - zoneOffset(first, timeZone);
-}
 
 /**
  * "Fri, Nov 20 at 11:59pm" -> ISO 8601. Flextensions leaves out the year,

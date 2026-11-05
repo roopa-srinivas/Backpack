@@ -1,4 +1,5 @@
 import { colorHex, isHexColor, nearestEventColor, type EventColor, type Settings } from "./settings.js";
+import { formatDue } from "./time.js";
 import { PLATFORM_NAMES, type Assignment, type Task } from "./types.js";
 
 type EventTime = { date: string } | { dateTime: string; timeZone: string };
@@ -39,17 +40,6 @@ export function dateInZone(instant: number, timeZone: string): string {
 
 function nextDate(date: string): string {
   return new Date(Date.parse(`${date}T00:00:00Z`) + DAY).toISOString().slice(0, 10);
-}
-
-function formatDue(instant: number, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(instant);
 }
 
 const SUBMIT_ORDER = { here: 0, tool: 1, elsewhere: 2 } as const;

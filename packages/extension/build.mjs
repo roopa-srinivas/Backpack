@@ -48,6 +48,7 @@ await build({
     background: join(here, "src/background.ts"),
     popup: join(here, "src/popup/popup.ts"),
     options: join(here, "src/options/options.ts"),
+    dates: join(here, "src/dates/dates.ts"),
   },
   bundle: true,
   format: "esm",
@@ -59,6 +60,8 @@ cpSync(join(here, "src/popup/popup.html"), join(out, "popup.html"));
 cpSync(join(here, "src/popup/popup.css"), join(out, "popup.css"));
 cpSync(join(here, "src/options/options.html"), join(out, "options.html"));
 cpSync(join(here, "src/options/options.css"), join(out, "options.css"));
+cpSync(join(here, "src/dates/dates.html"), join(out, "dates.html"));
+cpSync(join(here, "src/dates/dates.css"), join(out, "dates.css"));
 cpSync(join(here, "icons"), join(out, "icons"), { recursive: true });
 
 const clientId = process.env.BACKPACK_GOOGLE_CLIENT_ID ?? readEnvFile().BACKPACK_GOOGLE_CLIENT_ID ?? "";

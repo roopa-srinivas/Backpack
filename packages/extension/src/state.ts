@@ -1,4 +1,4 @@
-import { defaultSettings, type Assignment, type Platform, type Settings } from "@backpack/core";
+import { defaultSettings, type Assignment, type DueQuestion, type Platform, type Settings } from "@backpack/core";
 import type { CourseWebsite } from "./websites.js";
 
 export interface SyncResult {
@@ -8,6 +8,10 @@ export interface SyncResult {
   removed: number;
   unchanged: number;
   tasks: number;
+  /** Sites disagreeing about a deadline for the first time on this sync, by task key. */
+  newQuestions?: string[];
+  /** Questions whose "remind me" time has come. */
+  dueReminders?: string[];
 }
 
 /**
@@ -39,6 +43,10 @@ export interface State {
   courseWebsites: Record<string, CourseWebsite>;
   /** When Backpack last looked through bCourses for course websites. */
   websitesCheckedAt: number | null;
+  /** Deadlines the sites disagree on, and what you answered, by task key. */
+  dueQuestions: Record<string, DueQuestion>;
+  /** Each task's deadline on the calendar after the last sync, by task key. */
+  lastDue: Record<string, string | null>;
 }
 
 export function initialState(): State {
@@ -53,6 +61,8 @@ export function initialState(): State {
     errors: {},
     courseWebsites: {},
     websitesCheckedAt: null,
+    dueQuestions: {},
+    lastDue: {},
   };
 }
 
@@ -73,6 +83,7 @@ export const SHARED_KEYS = [
   "prairielearnHost",
   "calendars",
   "courseWebsites",
+  "dueQuestions",
 ] as const satisfies readonly (keyof State)[];
 
 const isShared = (key: string): key is (typeof SHARED_KEYS)[number] => (SHARED_KEYS as readonly string[]).includes(key);

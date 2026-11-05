@@ -1,6 +1,8 @@
 import {
   addCourseToTitle,
   dropCourseFromTitle,
+  dueReminders,
+  isOpen,
   newestFirst,
   parseTerm,
   PLATFORM_NAMES,
@@ -89,9 +91,23 @@ async function render() {
   $<HTMLInputElement>("title-course").checked = titleHasCourse(settings.titleTemplate);
 
   $("last-sync").textContent = state.lastSync ? ago(state.lastSync.at) : "";
+  renderDueDates(state);
   renderWebsites(state);
   showErrors(state);
 }
+
+/** Deadlines the sites disagree on and you haven't settled. */
+function renderDueDates(state: State) {
+  const open = Object.values(state.dueQuestions).filter(isOpen);
+  $("due-section").hidden = open.length === 0;
+  const waiting = dueReminders(state.dueQuestions, Date.now()).length + open.filter((q) => q.answer.kind === "unanswered").length;
+  const n = open.length;
+  $("due-summary").textContent =
+    `Your sites list different due dates for ${n} assignment${n === 1 ? "" : "s"}` +
+    (waiting < n ? ` (${n - waiting} with a reminder set).` : ".");
+}
+
+$("review-due").addEventListener("click", () => void send({ type: "reviewDueDates" }));
 
 /** Creates an element with an optional class and text. */
 function make<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
