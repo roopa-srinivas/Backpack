@@ -1,4 +1,12 @@
-import { buildEvents, mergeAssignments, planSync, type Assignment, type ExistingEvent, type Platform } from "@backpack/core";
+import {
+  buildEvents,
+  mergeAssignments,
+  planSync,
+  PLATFORM_NAMES,
+  type Assignment,
+  type ExistingEvent,
+  type Platform,
+} from "@backpack/core";
 import type { CalendarClient } from "./google/calendar.js";
 import type { State, Store, SyncResult } from "./state.js";
 
@@ -72,8 +80,22 @@ export async function syncOnce(store: Store, sources: Source[], calendar: Calend
     });
     const desired = buildEvents(tasks, state.settings, now);
 
+    // The calendar list is shared with your other computers; one may have
+    // added a calendar while this one was reading.
+    const latest = await store.load();
+    const calendars = { ...latest.calendars };
+    let madeHere = [...latest.calendarsMadeHere];
+
+    // A platform this computer has never read (say, you haven't signed in to it
+    // here yet) leaves a gap in what it knows. If another computer keeps these
+    // calendars up to date, writing now would undo that computer's work.
+    const unread = sources.filter((s) => errors[s.platform] && !cache[s.platform]).map((s) => s.platform);
+    if (unread.length && Object.values(calendars).some((c) => !madeHere.includes(c.id))) {
+      const names = unread.map((p) => PLATFORM_NAMES[p]).join(" and ");
+      throw new Error(`Calendar left as is until this computer can read ${names} too. Your other computer keeps it up to date meanwhile.`);
+    }
+
     // Make sure every calendar the events need exists, with the right name.
-    const calendars = { ...state.calendars };
     for (const [key, info] of Object.entries(calendars)) {
       if (!(await calendar.calendarExists(info.id))) delete calendars[key];
     }
@@ -82,12 +104,29 @@ export async function syncOnce(store: Store, sources: Source[], calendar: Calend
       if (!known) {
         const id = await calendar.createCalendar(event.calendarName, state.settings.timeZone);
         calendars[event.calendarKey] = { id, name: event.calendarName };
+        madeHere.push(id);
+        // Saved straight away: if the sync stops before the end, the next one
+        // reuses this calendar instead of making a second copy of every event.
+        await store.save({ calendars, calendarsMadeHere: madeHere });
       } else if (known.name !== event.calendarName) {
         await calendar.renameCalendar(known.id, event.calendarName);
         calendars[event.calendarKey] = { ...known, name: event.calendarName };
       }
     }
     await store.save({ calendars });
+
+    // Two computers made the same calendar at once, and the other one's is
+    // the shared one: this computer's copy goes, or just Backpack's events in
+    // it if you added events of your own.
+    const sharedIds = new Set(Object.values(calendars).map((c) => c.id));
+    for (const id of madeHere.filter((id) => !sharedIds.has(id))) {
+      if (!(await calendar.calendarExists(id))) continue;
+      const { backpack, others } = await calendar.listEvents(id);
+      if (others === 0) await calendar.deleteCalendar(id);
+      else await runLimited(backpack.map((e) => () => calendar.deleteEvent(id, e.id)));
+    }
+    madeHere = madeHere.filter((id) => sharedIds.has(id));
+    await store.save({ calendarsMadeHere: madeHere });
 
     const existing: ExistingEvent[] = [];
     const othersIn: Record<string, number> = {};
@@ -109,6 +148,7 @@ export async function syncOnce(store: Store, sources: Source[], calendar: Calend
     for (const key of plan.unusedCalendars) {
       if (othersIn[key] === 0) {
         await calendar.deleteCalendar(idOf(key));
+        madeHere = madeHere.filter((id) => id !== idOf(key));
         delete calendars[key];
       }
     }
@@ -121,7 +161,7 @@ export async function syncOnce(store: Store, sources: Source[], calendar: Calend
       unchanged: plan.unchanged,
       tasks: desired.length,
     };
-    await store.save({ calendars, lastSync: result, errors });
+    await store.save({ calendars, calendarsMadeHere: madeHere, lastSync: result, errors });
     return result;
   } catch (error) {
     errors.google = message(error);

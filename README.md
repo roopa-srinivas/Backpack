@@ -4,16 +4,18 @@ Backpack puts every assignment from Canvas, Gradescope and PrairieLearn on your 
 
 Course sites each keep their own list of due dates, and the same homework often shows up on two of them. Backpack reads all of them using the logins already in your browser, merges the duplicates, and keeps a calendar up to date: new assignments appear, moved due dates move, and finished work gets checked off or removed.
 
-**Status:** early. Canvas, Gradescope and PrairieLearn work today. Course websites are next, followed by a web dashboard for setting up your format with a live preview.
+**Status:** early. Canvas, Gradescope and PrairieLearn work today. Backpack also finds each course's website on bCourses; reading assignments from those websites is next, followed by a web dashboard for setting up your format with a live preview.
 
 ## How it works
 
 - **Picking your platforms.** In the menu, check off every site your classes post assignments on. Checking one asks Chrome for permission to read just that site. Unchecking it removes its events on the next sync.
 - **Reading assignments.** A Chrome extension reads your courses using your existing browser login. Canvas comes from its official API. Gradescope and PrairieLearn have no student API, so Backpack reads the course pages you'd see, skipping courses you teach or TA. PrairieLearn deadlines come from each assessment's credit schedule (the end of full credit, not the late period). No passwords are stored and nothing goes through a server.
-- **Merging duplicates.** "Homework 3" on Canvas and "HW3: Ruby Intro" on Gradescope in the same course become one calendar event with both links. Course names are matched across sites, so COMPSCI 169A and CS 169A count as the same course.
+- **Finding course websites.** Many classes post work on their own site (cs61a.org, eecs16a.org, ...). Backpack looks through each bCourses course for it: a navigation tab like "Course Website", then the Home page, the Syllabus, Modules and announcements. It skips links to Piazza, Ed, Zoom, Gradescope, Google Docs and similar tools. When it can't find a course's website, the Backpack icon shows a count, and the menu lets you type the address in or mark the course as having none. Backpack never replaces an address you entered. New courses are looked at on the next sync, and courses without a website are checked again once a week, since staff often add the link after the term starts. **Look again on bCourses** checks right away.
+- **Merging duplicates.** Each piece of work goes on your calendar once, however many sites list it. "Homework 3" on Canvas and "HW03: Ruby Intro" on Gradescope in the same course become one event with both links, as does one lab posted on both a lecture and a lab bCourses site. Course names are matched across sites, so COMPSCI 169A and CS 169A count as the same course, and a course listed without a code (like "Robotics" on Gradescope) is matched to the course it shares assignments with. Two courses that both have codes are never merged, and two assignments on the same course site are never merged with each other.
 - **Your format.** Choose one calendar, one per course or one per platform. Show each assignment as an all-day event, a short event at the due time, or a work block before it. Write your own event titles from `{course}`, `{title}`, `{platform}`, `{kind}` and `{points}`, and set reminders, course colors and labels.
 - **Staying in sync.** Every 3 hours, or when you click Sync now, Backpack compares what should be on your calendar with what is, and only makes the changes needed. It only touches calendars it created, and never deletes a calendar you've added your own events to.
 - **When a site is down.** If a site can't be reached, its events stay as they were until the next good sync.
+- **On more than one computer.** Your setup (checked sites, format, course websites) and the list of Backpack's calendars are shared through Chrome sync, so every computer where you use Backpack writes to the same calendars instead of each adding its own copy of every event. If two computers set up at the same moment and each make a calendar, the extra one is removed on a later sync (only Backpack's events in it, if you've added your own). A computer that can't read one of your sites yet (for example, you haven't signed in to Gradescope there) leaves the calendar alone until it can.
 
 ## Project layout
 
@@ -52,4 +54,4 @@ The first build creates `keys/backpack.pem`, which keeps the extension id the sa
 
 ## Privacy
 
-Backpack reads course pages only on the sites you allow, keeps everything in your browser's extension storage, and writes only to calendars it created. There's no Backpack server.
+Backpack reads course pages only on the sites you allow and writes only to calendars it created. Assignments it reads stay in this browser's extension storage. Your setup (checked sites, school addresses, format, course websites) and the ids of Backpack's calendars are kept in Chrome's synced extension storage, so with Chrome sync on they're shared with your other computers through your Google account. There's no Backpack server.

@@ -31,7 +31,11 @@ export function planSync(desired: DesiredEvent[], existing: ExistingEvent[], kno
     byTask.set(event.taskKey, list);
   }
 
+  const planned = new Set<string>();
   for (const want of desired) {
+    // One event per task, even if a task were somehow listed twice.
+    if (planned.has(want.taskKey)) continue;
+    planned.add(want.taskKey);
     const found = byTask.get(want.taskKey) ?? [];
     byTask.delete(want.taskKey);
     const inPlace = found.find((e) => e.calendarKey === want.calendarKey);

@@ -60,4 +60,16 @@ footer { padding: 0.8rem 1rem; display: grid; gap: 0.6rem; }
 #message:empty { display: none; }
 #message[data-tone="ok"] { color: var(--ok); }
 #message[data-tone="error"] { color: var(--error); }
+.websites { list-style: none; display: grid; gap: 0.5rem; margin-bottom: 0.6rem; }
+.websites li { display: grid; gap: 0.25rem; }
+.websites .top { display: flex; align-items: baseline; gap: 0.5rem; }
+.websites .name { font-weight: 600; white-space: nowrap; }
+.websites .site { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); text-decoration: none; }
+.websites .site:hover { text-decoration: underline; }
+.websites .note { flex: 1; font-size: 0.78rem; color: var(--ink2); }
+.websites li[data-missing] .note { color: var(--error); }
+.websites li[data-missing] { padding-left: 0.6rem; border-left: 2px solid var(--error); }
+.websites button.mini { padding: 0.2rem 0.55rem; font-size: 0.75rem; }
+.websites .actions { display: flex; gap: 0.9rem; }
+button.link { border: none; background: none; padding: 0; color: var(--ink2); text-decoration: underline; font-size: 0.75rem; justify-self: start; }
 [hidden] { display: none !important; }

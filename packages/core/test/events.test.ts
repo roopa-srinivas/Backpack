@@ -136,4 +136,9 @@ describe("planSync", () => {
     expect(plan.create).toEqual([b]);
     expect(plan.unusedCalendars).toEqual(["course:cs169a"]);
   });
+
+  it("plans one event per task even if a task is listed twice", () => {
+    const plan = planSync([a, a, b], []);
+    expect(plan.create).toEqual([a, b]);
+  });
 });
