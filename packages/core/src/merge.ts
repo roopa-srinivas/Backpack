@@ -186,12 +186,16 @@ function courseIdentities(
     const sample = byCourse.get(course)![0]!.course;
     const pinned = Boolean(aliases[`${sample.platform}:${sample.id}`]);
     const codes = pinned ? [] : courseCodes(sample);
-    // Every code in one name is the same class.
+    const mine = codes.find((c) => c.key === identity.key);
+    // Codes listed together in one name are one class when they're the same
+    // number ("EECS C106A/MEC ENG C106A") or one adds a letter ("CS 169" and
+    // "CS169A"). Other pairs, like CS 61A and CS 88 sharing a site, stay apart.
+    const sameNumber = (a: string, b: string) => a === b || (/^\d+$/.test(a) && new RegExp(`^${a}[a-z]$`).test(b));
     for (const code of codes) {
+      if (!mine || !(sameNumber(code.number, mine.number) || sameNumber(mine.number, code.number))) continue;
       if (!labels.has(code.key)) labels.set(code.key, code.label);
       groups.join(code.key, identity.key);
     }
-    const mine = codes.find((c) => c.key === identity.key);
     const known = info.get(identity.key);
     const term = courseTerm(sample);
     info.set(identity.key, {

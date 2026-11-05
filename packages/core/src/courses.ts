@@ -20,10 +20,6 @@ const DEPARTMENT_ALIASES: Record<string, string> = {
   DATA: "DATA",
 };
 
-// Department letters (allowing one space, as in "EL ENG"), an optional
-// cross-listing "C", then a course number with an optional letter suffix.
-const COURSE_PATTERN = /\b([A-Z]{2,8}(?: [A-Z]{2,4})?)\s*C?(\d{1,3}[A-Z]{0,2})\b/;
-
 export interface CourseIdentity {
   /** Lowercase, no spaces, e.g. "cs169a". Equal keys mean the same course. */
   key: string;
@@ -40,21 +36,21 @@ export function identifyCourse(course: Course, aliases: Record<string, string> =
   const pinned = aliases[`${course.platform}:${course.id}`];
   if (pinned) return { key: pinned.toLowerCase().replace(/\s+/g, ""), label: pinned };
 
-  for (const text of [course.code, course.name]) {
-    if (!text) continue;
-    const match = COURSE_PATTERN.exec(text.toUpperCase());
-    if (!match) continue;
-    const dept = DEPARTMENT_ALIASES[match[1]!] ?? match[1]!.replace(/\s+/g, "");
-    const label = `${dept} ${match[2]}`;
-    return { key: label.toLowerCase().replace(/\s+/g, ""), label };
-  }
+  const [first] = courseCodes(course);
+  if (first) return { key: first.key, label: first.label };
   // No recognizable code: fall back to the platform course itself.
   const label = (course.code || course.name).trim();
   return { key: `${course.platform}:${course.id}`, label };
 }
 
-/** Labels in course names that aren't departments, like the "LEC" in "LEC 001". */
-const NOT_DEPARTMENTS = new Set(["LEC", "DIS", "LAB", "SEM", "SEC", "TUT", "STD", "IND", "GRP", "CLC", "WBL", "FLD", "COL", "REC", "SES", "VOL"]);
+/**
+ * Words in course names that look like a department but aren't: section
+ * labels ("LEC 001") and terms written short ("Fall26", "FA26", "Fall 26").
+ */
+const NOT_DEPARTMENTS = new Set([
+  "LEC", "DIS", "LAB", "SEM", "SEC", "TUT", "STD", "IND", "GRP", "CLC", "WBL", "FLD", "COL", "REC", "SES", "VOL",
+  "FALL", "SPRING", "SUMMER", "WINTER", "AUTUMN", "FA", "SP", "SU", "WI",
+]);
 
 const CODES = /\b([A-Z]{2,8}(?: [A-Z]{2,4})?)\s*(C)?(\d{1,3}[A-Z]{0,2})\b/g;
 
