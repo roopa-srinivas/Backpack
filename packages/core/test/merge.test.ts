@@ -280,6 +280,37 @@ describe("classes with several names", () => {
     expect(mergeAssignments([hw("canvas", fall), hw("gradescope", spring, "HW 9", "2026-03-01T07:59:00Z")])).toHaveLength(2);
   });
 
+  it("keeps CS 160 and CS 169A apart when sites write the term short (Fall26, FA26, Fall 26)", () => {
+    // How bCourses, Gradescope and PrairieLearn named these in a real account.
+    const tasks = mergeAssignments([
+      hw("canvas", course("canvas", "1", "Introduction to Software Engineering (Fall 2026)", { code: "CS169A Fall 2026", term: "Fall 2026" })),
+      hw("canvas", course("canvas", "2", "User Interface Design and Development (Fall 2026)", { code: "CS160 (Fall26)", term: "Fall 2026" }), "HW 1"),
+      hw("gradescope", course("gradescope", "3", "Introduction to Software Engineering (Fall 2026)", { code: "CS169A FA26", term: "Fall 2026" })),
+      hw("prairielearn", course("prairielearn", "4", "CS 169: Introduction to Software Engineering, CS169A Fall 26", { code: "CS 169" }), "Quiz 1"),
+    ]);
+    const classes = new Map<string, Set<string>>();
+    for (const t of tasks) for (const s of t.sources) classes.set(t.courseLabel, (classes.get(t.courseLabel) ?? new Set()).add(s.course.id));
+    expect(Object.fromEntries([...classes].map(([label, ids]) => [label, [...ids].sort()]))).toEqual({
+      "CS 160": ["2"],
+      "CS 169A": ["1", "3", "4"],
+    });
+    expect(tasks.find((t) => t.courseLabel === "CS 160")!.alsoKnownAs).toBeUndefined();
+    expect(tasks.find((t) => t.courseLabel === "CS 169A")!.alsoKnownAs).toEqual([{ key: "cs169", label: "CS 169" }]);
+  });
+
+  it("never reads a short term name as a course code", () => {
+    expect(courseCodes({ platform: "canvas", id: "1", name: "x", code: "CS160 (Fall26)" }).map((c) => c.label)).toEqual(["CS 160"]);
+    expect(courseCodes({ platform: "gradescope", id: "2", name: "x", code: "CS169A FA26" }).map((c) => c.label)).toEqual(["CS 169A"]);
+    expect(courseCodes({ platform: "prairielearn", id: "3", name: "Data 100, SP 27" }).map((c) => c.label)).toEqual(["DATA 100"]);
+  });
+
+  it("only joins codes from one name that are the same class", () => {
+    // CS 61A and CS 88 can share a site but are different classes.
+    const shared = course("canvas", "1", "COMPSCI 61A/COMPSCI 88 - LEC 001");
+    const tasks = mergeAssignments([hw("canvas", shared), hw("gradescope", course("gradescope", "2", "CS 88"), "Lab 1")]);
+    expect(new Set(tasks.map((t) => t.courseKey))).toEqual(new Set(["cs61a", "cs88"]));
+  });
+
   it("joins a number with and without its letter, but nothing else", () => {
     const fall = { term: "Fall 2026" };
     const tasks = mergeAssignments([

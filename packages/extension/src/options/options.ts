@@ -201,12 +201,14 @@ function sameClassControls(
 ): HTMLElement {
   const row = make("div", "same-class muted hint");
   if (alsoKnownAs.length) {
-    row.append(`Also listed as ${alsoKnownAs.map((a) => a.label).join(", ")}. `);
     // Only merges the student made can be undone; cross-listings Backpack found stay together.
     const keys = new Set([key, ...alsoKnownAs.map((a) => a.key)]);
     const separate = (merges: Record<string, string>) =>
       Object.fromEntries(Object.entries(merges).filter(([from, to]) => !keys.has(from) && !keys.has(to)));
-    if (Object.keys(separate(settings.courseMerges)).length !== Object.keys(settings.courseMerges).length) {
+    const mergedByHand = Object.keys(separate(settings.courseMerges)).length !== Object.keys(settings.courseMerges).length;
+    const names = alsoKnownAs.map((a) => a.label).join(", ");
+    row.append(`Also listed as ${names} (${mergedByHand ? "you merged these" : "matched by name across your sites"}). `);
+    if (mergedByHand) {
       const split = make("button", "link", "Keep them separate");
       split.type = "button";
       split.addEventListener("click", () => update((s) => ({ ...s, courseMerges: separate(s.courseMerges) })));

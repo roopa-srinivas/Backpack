@@ -9,7 +9,13 @@ describe("terms", () => {
     expect(parseTerm("2027 Spring")).toEqual({ season: "Spring", year: 2027 });
     expect(parseTerm("CS 61C: Great Ideas in Computer Architecture, Summer 2026")).toEqual({ season: "Summer", year: 2026 });
     expect(parseTerm("Autumn 2026")).toEqual({ season: "Fall", year: 2026 });
+    expect(parseTerm("CS169A Fall 26")).toEqual({ season: "Fall", year: 2026 });
+    expect(parseTerm("CS160 (Fall26)")).toEqual({ season: "Fall", year: 2026 });
+    expect(parseTerm("CS169A FA26")).toEqual({ season: "Fall", year: 2026 });
+    expect(parseTerm("Spring '27")).toEqual({ season: "Spring", year: 2027 });
+    expect(parseTerm("Data 100 SP27")).toEqual({ season: "Spring", year: 2027 });
     expect(parseTerm("COMPSCI 61A - LEC 001")).toBeNull();
+    expect(parseTerm("CS 61A, section 26")).toBeNull();
     expect(parseTerm("Default Term")).toBeNull();
     expect(parseTerm(undefined)).toBeNull();
   });
