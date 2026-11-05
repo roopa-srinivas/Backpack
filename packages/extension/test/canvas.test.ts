@@ -17,7 +17,7 @@ function fakeCanvas(routes: Record<string, { body: unknown; next?: string; statu
   return { fetchImpl, calls };
 }
 
-const COURSES = "/api/v1/users/self/courses?enrollment_state=active&per_page=100";
+const COURSES = "/api/v1/users/self/courses?enrollment_state=active&include[]=term&per_page=100";
 const assignmentsPath = (id: number) => `/api/v1/courses/${id}/assignments?per_page=100&include[]=submission&order_by=due_at`;
 
 describe("Canvas helpers", () => {

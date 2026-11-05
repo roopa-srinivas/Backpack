@@ -7,6 +7,8 @@ export interface CanvasCourse {
   course_code?: string;
   /** Set (with no name) on courses that haven't opened or have closed. */
   access_restricted_by_date?: boolean;
+  /** Included with include[]=term; "Default Term" for sites outside any semester. */
+  term?: { name?: string };
 }
 
 interface CanvasAssignment {
@@ -120,17 +122,19 @@ export function canvasApi(host: string, fetchImpl: typeof fetch = fetch): Canvas
 
 /** The student's active courses, skipping ones that haven't opened or have closed. */
 export async function fetchCanvasCourses(api: CanvasApi): Promise<CanvasCourse[]> {
-  const courses = await api.getAll<CanvasCourse>("/api/v1/users/self/courses?enrollment_state=active&per_page=100");
+  const courses = await api.getAll<CanvasCourse>("/api/v1/users/self/courses?enrollment_state=active&include[]=term&per_page=100");
   return courses.filter((c) => !c.access_restricted_by_date);
 }
 
 /** How Canvas courses look to the rest of Backpack. */
 export function toCourse(course: CanvasCourse): Course {
+  const term = course.term?.name;
   return {
     platform: "canvas",
     id: String(course.id),
     name: course.name ?? course.course_code ?? `Course ${course.id}`,
     ...(course.course_code ? { code: course.course_code } : {}),
+    ...(term && !/default term/i.test(term) ? { term } : {}),
   };
 }
 

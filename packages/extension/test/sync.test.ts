@@ -163,6 +163,24 @@ describe("syncOnce", () => {
     expect(colors.sort()).toEqual(["11", eecs106a!.color].sort());
   });
 
+  it("doesn't spend a color on a class from an earlier semester", async () => {
+    const s = store();
+    const google = new FakeCalendar();
+    const old: Source = {
+      platform: "gradescope",
+      fetch: async () => [
+        {
+          ...canvasAssignment("9", "HW 1", "2026-02-01T07:59:00Z"),
+          platform: "gradescope",
+          course: { platform: "gradescope", id: "12", name: "CS 61B", term: "Spring 2026" },
+        },
+      ],
+    };
+    await syncOnce(s, [canvas, old], google, NOW);
+    expect(s.state.settings.courses.cs169a?.color).toBeTruthy();
+    expect(s.state.settings.courses.cs61b).toBeUndefined();
+  });
+
   it("keeps the last good events when Canvas can't be reached", async () => {
     const s = store();
     const google = new FakeCalendar();

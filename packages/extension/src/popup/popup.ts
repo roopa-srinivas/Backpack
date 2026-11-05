@@ -1,9 +1,9 @@
-import { PLATFORM_NAMES, type EventStyle, type Platform, type Settings } from "@backpack/core";
+import { newestFirst, parseTerm, PLATFORM_NAMES, type EventStyle, type Platform, type Settings } from "@backpack/core";
 import type { Reply, Request } from "../background.js";
 import { isGoogleConnected } from "../google/auth.js";
 import { platformInfo } from "../platforms.js";
 import { chromeStore, type State } from "../state.js";
-import { missingWebsites, normalizeWebsiteUrl, showWebsiteBadge, type CourseWebsite } from "../websites.js";
+import { isEarlierCourse, missingWebsites, normalizeWebsiteUrl, showWebsiteBadge, type CourseWebsite } from "../websites.js";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -91,6 +91,9 @@ function make<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", tex
 
 const WEBSITE_ORDER: Record<CourseWebsite["status"], number> = { missing: 0, found: 1, manual: 1, none: 2 };
 
+/** Earlier semesters' courses stay tucked away unless the student asks for them. */
+let showEarlierWebsites = false;
+
 /** "https://www.cs61a.org/" -> "cs61a.org". */
 const shortUrl = (url: string) => url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
 
@@ -100,10 +103,15 @@ function renderWebsites(state: State) {
   $("websites-section").hidden = !show;
   if (!show) return;
 
-  const entries = Object.entries(state.courseWebsites).sort(
-    ([, a], [, b]) => WEBSITE_ORDER[a.status] - WEBSITE_ORDER[b.status] || a.label.localeCompare(b.label),
-  );
-  const missing = missingWebsites(state).length;
+  const now = Date.now();
+  const all = Object.entries(state.courseWebsites);
+  const entries = all
+    .filter(([, w]) => !isEarlierCourse(w, now))
+    .sort(([, a], [, b]) => WEBSITE_ORDER[a.status] - WEBSITE_ORDER[b.status] || a.label.localeCompare(b.label));
+  const earlier = all
+    .filter(([, w]) => isEarlierCourse(w, now))
+    .sort(([, a], [, b]) => newestFirst(parseTerm(a.term), parseTerm(b.term)) || a.label.localeCompare(b.label));
+  const missing = missingWebsites(state, now).length;
   $("websites-summary").textContent = !state.websitesCheckedAt && !entries.length
     ? "Backpack looks on bCourses for each course's website."
     : !entries.length
@@ -112,15 +120,27 @@ function renderWebsites(state: State) {
         ? `Couldn't find a website for ${missing} course${missing === 1 ? "" : "s"} on bCourses. Add ${missing === 1 ? "it" : "them"} below, or mark a course as having none.`
         : "Found on bCourses. Reading assignments from course websites is coming soon.";
   $("websites").replaceChildren(...entries.map(([id, website]) => websiteRow(id, website)));
+
+  const toggle = $<HTMLButtonElement>("toggle-earlier-websites");
+  toggle.hidden = !earlier.length;
+  toggle.textContent = showEarlierWebsites ? "Hide earlier semesters" : `Show earlier semesters (${earlier.length})`;
+  toggle.setAttribute("aria-expanded", String(showEarlierWebsites));
+  $("earlier-websites-wrap").hidden = !showEarlierWebsites || !earlier.length;
+  $("earlier-websites").replaceChildren(...earlier.map(([id, website]) => websiteRow(id, website)));
 }
 
 function websiteRow(id: string, website: CourseWebsite, editing = false): HTMLLIElement {
+  const earlier = isEarlierCourse(website);
   const li = make("li");
-  if (website.status === "missing") li.dataset.missing = "true";
+  // An earlier semester's course doesn't need anything from the student.
+  if (website.status === "missing" && !earlier) li.dataset.missing = "true";
   const top = make("div", "top");
   const name = make("span", "name", website.label);
   name.title = website.name;
   top.append(name);
+  // An earlier semester's course says which one: under the link when there is one, so it fits.
+  const term = earlier && website.term ? website.term : "";
+  if (term && !(website.url && !editing)) top.append(make("span", "term", term));
   li.append(top);
 
   if (website.url && !editing) {
@@ -133,7 +153,8 @@ function websiteRow(id: string, website: CourseWebsite, editing = false): HTMLLI
     change.type = "button";
     change.addEventListener("click", () => li.replaceWith(websiteRow(id, website, true)));
     top.append(link, change);
-    li.append(make("span", "muted hint", website.status === "manual" ? "Added by you" : `Found in ${website.foundIn ?? "bCourses"}`));
+    const where = website.status === "manual" ? "Added by you" : `Found in ${website.foundIn ?? "bCourses"}`;
+    li.append(make("span", "muted hint", term ? `${term} · ${where}` : where));
     return li;
   }
 
@@ -222,7 +243,7 @@ async function findWebsites() {
   if (!reply.ok) {
     say(reply.error, "error");
   } else {
-    const all = Object.values(state.courseWebsites);
+    const all = Object.values(state.courseWebsites).filter((w) => !isEarlierCourse(w));
     const found = all.filter((w) => w.url).length;
     say(`Websites for ${found} of ${all.length} course${all.length === 1 ? "" : "s"}.`, found === all.length ? "ok" : "");
   }
@@ -292,6 +313,11 @@ $("save-canvas").addEventListener("click", async () => {
 });
 
 $("find-websites").addEventListener("click", () => void findWebsites());
+
+$("toggle-earlier-websites").addEventListener("click", () => {
+  showEarlierWebsites = !showEarlierWebsites;
+  void render();
+});
 
 $("calendars").addEventListener("change", (e) =>
   saveSettings({ calendars: (e.target as HTMLSelectElement).value as Settings["calendars"] }),

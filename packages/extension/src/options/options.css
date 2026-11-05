@@ -21,4 +21,7 @@ li[data-hidden] .chip, li[data-hidden] .swatches { opacity: 0.4; }
 .swatch[aria-checked="true"] { outline: 2px solid var(--ink); outline-offset: 1px; }
 .swatch.none { width: auto; height: 1.35rem; border-radius: 999px; padding: 0 0.55rem; font-size: 0.72rem; background: var(--surface); border: 1px solid var(--border); color: var(--ink2); }
 .swatch.none[aria-checked="true"] { color: var(--ink); }
+.rows .term { font-size: 0.75rem; color: var(--ink2); white-space: nowrap; }
+.subhead { font-size: 0.75rem; font-weight: 700; color: var(--ink2); margin: 0.8rem 0 0.6rem; }
+#toggle-earlier { margin-bottom: 0.4rem; }
 .field .label select { width: auto; display: inline-block; padding: 0.15rem 0.3rem; }

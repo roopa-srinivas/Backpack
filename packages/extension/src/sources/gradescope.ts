@@ -93,6 +93,7 @@ export function parseCoursePage(html: string, course: GradescopeCourse): Assignm
     id: course.id,
     name: course.name || course.shortName,
     ...(course.shortName ? { code: course.shortName } : {}),
+    ...(course.term ? { term: course.term } : {}),
   };
 
   const assignments: Assignment[] = [];

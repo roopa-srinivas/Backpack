@@ -1,10 +1,16 @@
 import {
   assignCourseColors,
   EVENT_COLORS,
+  isEarlierTerm,
   mergeAssignments,
+  newestFirst,
+  newestTerm,
+  termName,
+  type Term,
   type AssignmentKind,
   type EventColor,
   type Settings,
+  type Task,
 } from "@backpack/core";
 import type { Reply, Request } from "../background.js";
 import { chromeStore } from "../state.js";
@@ -117,18 +123,37 @@ function reminderSelect(current: number[] | undefined, inherit: string | null, o
   return select;
 }
 
-/** The classes on your calendar, from the last sync on this computer. */
-async function courseList(): Promise<{ key: string; label: string }[]> {
+interface ListedCourse {
+  key: string;
+  label: string;
+  term: Term | null;
+}
+
+/** The classes on your calendar, from the last sync on this computer, with their newest term. */
+async function courseList(): Promise<ListedCourse[]> {
   const state = await chromeStore.load();
   const assignments = Object.values(state.cache).flatMap((c) => c.assignments);
   const tasks = mergeAssignments(assignments, { courseAliases: state.settings.courseAliases });
-  const courses = new Map(tasks.map((t) => [t.courseKey, t.courseLabel]));
-  return [...courses].map(([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label));
+  const courses = new Map<string, { label: string; copies: Task["sources"] }>();
+  for (const task of tasks) {
+    const course = courses.get(task.courseKey) ?? { label: task.courseLabel, copies: [] };
+    course.copies.push(...task.sources);
+    courses.set(task.courseKey, course);
+  }
+  return [...courses]
+    .map(([key, { label, copies }]) => ({ key, label, term: newestTerm(copies.map((c) => c.course)) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
+
+/** Earlier semesters' classes stay tucked away unless the student asks for them. */
+let showEarlier = false;
 
 async function render() {
   const { settings } = await chromeStore.load();
-  const courses = await courseList();
+  const now = Date.now();
+  const listed = await courseList();
+  const courses = listed.filter((c) => !isEarlierTerm(c.term, now));
+  const earlier = listed.filter((c) => isEarlierTerm(c.term, now)).sort((a, b) => newestFirst(a.term, b.term));
 
   // Colors Backpack would pick on the next sync, shown (and kept) now.
   const colored = assignCourseColors(settings, courses.map((c) => c.key));
@@ -137,45 +162,53 @@ async function render() {
     return render();
   }
 
-  $("no-courses").hidden = courses.length > 0;
-  $("courses").replaceChildren(
-    ...courses.map(({ key, label }) => {
-      const course = settings.courses[key] ?? {};
-      const li = make("li");
-      if (course.hidden) li.dataset.hidden = "true";
-      const top = make("div", "top");
-      const name = make("input");
-      name.type = "text";
-      name.placeholder = label;
-      name.value = course.label ?? "";
-      name.setAttribute("aria-label", `Name for ${label}`);
-      name.addEventListener("change", () =>
-        update((s) => {
-          const value = name.value.trim();
-          const next = { ...s.courses[key] };
-          if (value) next.label = value;
-          else delete next.label;
-          return { ...s, courses: { ...s.courses, [key]: next } };
-        }),
-      );
-      const hide = make("label", "hide");
-      const box = make("input");
-      box.type = "checkbox";
-      box.checked = Boolean(course.hidden);
-      box.addEventListener("change", () =>
-        update((s) => ({ ...s, courses: { ...s.courses, [key]: { ...s.courses[key], hidden: box.checked } } })),
-      );
-      hide.append(box, "Hide");
-      top.append(chip(course.label || label, course.color), name, hide);
-      li.append(
-        top,
-        swatches(course.color, "No color", `${label} color`, (color) =>
-          update((s) => ({ ...s, courses: { ...s.courses, [key]: { ...s.courses[key], color } } })),
-        ),
-      );
-      return li;
-    }),
-  );
+  $("no-courses").hidden = listed.length > 0;
+  const toggle = $<HTMLButtonElement>("toggle-earlier");
+  toggle.hidden = !earlier.length;
+  toggle.textContent = showEarlier ? "Hide earlier semesters" : `Show earlier semesters (${earlier.length})`;
+  toggle.setAttribute("aria-expanded", String(showEarlier));
+  $("earlier-wrap").hidden = !showEarlier || !earlier.length;
+
+  const courseRow = ({ key, label, term }: ListedCourse, isEarlier: boolean) => {
+    const course = settings.courses[key] ?? {};
+    const li = make("li");
+    if (course.hidden) li.dataset.hidden = "true";
+    const top = make("div", "top");
+    const name = make("input");
+    name.type = "text";
+    name.placeholder = label;
+    name.value = course.label ?? "";
+    name.setAttribute("aria-label", `Name for ${label}`);
+    name.addEventListener("change", () =>
+      update((s) => {
+        const value = name.value.trim();
+        const next = { ...s.courses[key] };
+        if (value) next.label = value;
+        else delete next.label;
+        return { ...s, courses: { ...s.courses, [key]: next } };
+      }),
+    );
+    const hide = make("label", "hide");
+    const box = make("input");
+    box.type = "checkbox";
+    box.checked = Boolean(course.hidden);
+    box.addEventListener("change", () =>
+      update((s) => ({ ...s, courses: { ...s.courses, [key]: { ...s.courses[key], hidden: box.checked } } })),
+    );
+    hide.append(box, "Hide");
+    top.append(chip(course.label || label, course.color), name);
+    if (isEarlier && term) top.append(make("span", "term", termName(term)));
+    top.append(hide);
+    li.append(
+      top,
+      swatches(course.color, "No color", `${label} color`, (color) =>
+        update((s) => ({ ...s, courses: { ...s.courses, [key]: { ...s.courses[key], color } } })),
+      ),
+    );
+    return li;
+  };
+  $("courses").replaceChildren(...courses.map((c) => courseRow(c, false)));
+  $("earlier-courses").replaceChildren(...earlier.map((c) => courseRow(c, true)));
 
   const general = reminderSelect(settings.reminders, null, (minutes) =>
     update((s) => ({ ...s, reminders: minutes ?? s.reminders })),
@@ -235,6 +268,11 @@ async function render() {
     }),
   );
 }
+
+$("toggle-earlier").addEventListener("click", () => {
+  showEarlier = !showEarlier;
+  void render();
+});
 
 $("due-soon-hours").addEventListener("change", (e) => {
   const dueSoonHours = Number((e.target as HTMLSelectElement).value);

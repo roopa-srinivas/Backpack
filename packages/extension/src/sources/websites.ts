@@ -1,4 +1,4 @@
-import { identifyCourse, type Course } from "@backpack/core";
+import { courseTerm, identifyCourse, isEarlierTerm, termName, type Course } from "@backpack/core";
 import { HTMLElement, NodeType, parse, type Node } from "node-html-parser";
 import type { State, Store } from "../state.js";
 import type { CourseWebsite } from "../websites.js";
@@ -309,7 +309,8 @@ const setByStudent = (w: CourseWebsite | undefined) => w?.status === "manual" ||
 /**
  * Looks through bCourses for course websites and saves what it finds. New
  * courses are looked at right away. Without `force`, a course with no website
- * is looked at again once a week, and a found website is kept as is.
+ * is looked at again once a week (unless it's from an earlier semester), and
+ * a found website is kept as is.
  */
 export async function refreshCourseWebsites(
   store: Store,
@@ -327,11 +328,16 @@ export async function refreshCourseWebsites(
     const course = toCourse(canvasCourse);
     const previous = state.courseWebsites[course.id];
     const identity = identifyCourse(course, state.settings.courseAliases);
-    const names = { label: state.settings.courses[identity.key]?.label ?? identity.label, name: course.name };
+    const term = courseTerm(course);
+    const names = {
+      label: state.settings.courses[identity.key]?.label ?? identity.label,
+      name: course.name,
+      ...(term ? { term: termName(term) } : {}),
+    };
 
-    const lookAgain =
-      !setByStudent(previous) &&
-      (!previous || force || (previous.status === "missing" && now - previous.checkedAt >= RECHECK_MS));
+    const weeklyLook =
+      previous?.status === "missing" && now - previous.checkedAt >= RECHECK_MS && !isEarlierTerm(term, now);
+    const lookAgain = !setByStudent(previous) && (!previous || force || weeklyLook);
     if (previous && !lookAgain) {
       websites[course.id] = { ...previous, ...names };
       continue;

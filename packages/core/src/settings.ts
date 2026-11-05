@@ -99,19 +99,21 @@ export function defaultSettings(timeZone = Intl.DateTimeFormat().resolvedOptions
 export const COURSE_PALETTE: EventColor[] = ["7", "6", "2", "3", "5", "9", "4", "10", "1"];
 
 /**
- * Gives each course without a color one that no other course is using; with
- * more courses than colors, they're reused in order. Returns null when
- * nothing changed.
+ * Gives each of these courses that has no color one that none of the others
+ * is using; with more courses than colors, they're reused in order. Courses
+ * not listed (say, from earlier semesters) don't count, so they never crowd
+ * out this term's classes. Returns null when nothing changed.
  */
 export function assignCourseColors(settings: Settings, courseKeys: string[]): Settings | null {
   const courses = { ...settings.courses };
+  const keys = [...new Set(courseKeys)].sort();
   let changed = false;
-  for (const key of [...new Set(courseKeys)].sort()) {
-    if (courses[key]?.color !== undefined) continue;
-    const taken = new Set(Object.values(courses).map((c) => c.color));
-    const color = COURSE_PALETTE.find((c) => !taken.has(c)) ?? COURSE_PALETTE[Object.keys(courses).length % COURSE_PALETTE.length]!;
+  keys.forEach((key, index) => {
+    if (courses[key]?.color !== undefined) return;
+    const taken = new Set(keys.map((k) => courses[k]?.color));
+    const color = COURSE_PALETTE.find((c) => !taken.has(c)) ?? COURSE_PALETTE[index % COURSE_PALETTE.length]!;
     courses[key] = { ...courses[key], color };
     changed = true;
-  }
+  });
   return changed ? { ...settings, courses } : null;
 }
