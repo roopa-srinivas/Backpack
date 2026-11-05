@@ -50,6 +50,28 @@ export function keepKnownDueDates(fresh: Assignment[], previous: Assignment[]): 
   return fresh.map((a) => (a.dueAt === null && known.has(a.id) ? { ...a, dueAt: known.get(a.id)! } : a));
 }
 
+/** How many earlier deadlines each copy remembers. */
+const DUE_HISTORY = 5;
+
+/**
+ * Notes when each copy's deadline moved since the last read, and the dates
+ * it showed before. With these, a copy whose site moved the date still
+ * matches a copy on a site that hasn't caught up, and the newer date wins.
+ */
+export function trackDueDates(fresh: Assignment[], previous: Assignment[], now: number): Assignment[] {
+  const before = new Map(previous.map((a) => [a.id, a]));
+  return fresh.map((a) => {
+    const last = before.get(a.id);
+    if (!last) return a;
+    const { earlierDueDates, dueMovedAt } = last;
+    const moved = Boolean(a.dueAt && last.dueAt && Date.parse(a.dueAt) !== Date.parse(last.dueAt));
+    if (!moved) {
+      return { ...a, ...(earlierDueDates ? { earlierDueDates } : {}), ...(dueMovedAt ? { dueMovedAt } : {}) };
+    }
+    return { ...a, earlierDueDates: [...(earlierDueDates ?? []), last.dueAt!].slice(-DUE_HISTORY), dueMovedAt: now };
+  });
+}
+
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
@@ -64,9 +86,10 @@ export async function syncOnce(store: Store, sources: Source[], calendar: Calend
   // A platform that fails keeps its last good read, so its events stay put.
   for (const source of sources) {
     try {
+      const previous = state.cache[source.platform]?.assignments ?? [];
       cache[source.platform] = {
         fetchedAt: now,
-        assignments: keepKnownDueDates(await source.fetch(), state.cache[source.platform]?.assignments ?? []),
+        assignments: trackDueDates(keepKnownDueDates(await source.fetch(), previous), previous, now),
       };
     } catch (error) {
       errors[source.platform] = message(error);

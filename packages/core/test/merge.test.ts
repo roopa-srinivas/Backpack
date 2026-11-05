@@ -280,6 +280,40 @@ describe("cross-referencing Flextensions", () => {
   });
 });
 
+describe("when a site moves a due date", () => {
+  it("keeps copies together after one site moves the date, if they agreed before", () => {
+    const gradescope = assignment("gradescope", {
+      title: "HW 3",
+      dueAt: "2026-10-28T06:59:00Z",
+      earlierDueDates: ["2026-10-24T06:59:00Z"],
+      dueMovedAt: 1000,
+    });
+    const tasks = mergeAssignments([assignment("canvas", { title: "Homework 3" }), gradescope]);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.dueAt).toBe("2026-10-28T06:59:00Z");
+  });
+
+  it("goes with the newest move, whichever site it's on", () => {
+    const tasks = mergeAssignments([
+      assignment("gradescope", { title: "HW 3", dueAt: "2026-10-28T06:59:00Z", earlierDueDates: ["2026-10-24T06:59:00Z"], dueMovedAt: 1000 }),
+      assignment("canvas", { title: "HW 3", dueAt: "2026-10-30T06:59:00Z", earlierDueDates: ["2026-10-24T06:59:00Z"], dueMovedAt: 2000 }),
+    ]);
+    expect(tasks.map((t) => [t.key.split(":")[0], t.dueAt])).toEqual([["gradescope", "2026-10-30T06:59:00Z"]]);
+  });
+
+  it("needs exact titles to match on old dates", () => {
+    const tasks = mergeAssignments([
+      assignment("canvas", { title: "Reading response on Turing" }),
+      assignment("gradescope", {
+        title: "Reading response on Turing paper",
+        dueAt: "2026-10-28T06:59:00Z",
+        earlierDueDates: ["2026-10-24T06:59:00Z"],
+      }),
+    ]);
+    expect(tasks).toHaveLength(2);
+  });
+});
+
 describe("classes with several names", () => {
   const course = (platform: "canvas" | "gradescope" | "prairielearn", id: string, name: string, extra: object = {}) => ({
     platform,
