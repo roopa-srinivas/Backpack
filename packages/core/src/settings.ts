@@ -18,6 +18,39 @@ export const EVENT_COLORS: Record<EventColor, { name: string; hex: string }> = {
   "11": { name: "Tomato", hex: "#D50000" },
 };
 
+/** Any color, as "#rrggbb". */
+export type HexColor = `#${string}`;
+
+export const isHexColor = (color: unknown): color is HexColor => typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color);
+
+/** The hex value of a Google color or a custom one. */
+export const colorHex = (color: EventColor | HexColor): string => (isHexColor(color) ? color : EVENT_COLORS[color].hex);
+
+const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
+
+/**
+ * The closest of Google's 11 event colors to any color. Events can only use
+ * those 11; a whole calendar can use any color.
+ */
+export function nearestEventColor(hex: HexColor): EventColor {
+  const [r, g, b] = rgb(hex);
+  let best: EventColor = "1";
+  let bestDistance = Infinity;
+  for (const [id, { hex: candidate }] of Object.entries(EVENT_COLORS) as [EventColor, { hex: string }][]) {
+    const [cr, cg, cb] = rgb(candidate);
+    // Weighted for how eyes see red, green and blue.
+    const distance = 2 * (r - cr) ** 2 + 4 * (g - cg) ** 2 + 3 * (b - cb) ** 2;
+    if (distance < bestDistance) [best, bestDistance] = [id, distance];
+  }
+  return best;
+}
+
+/** Black or white, whichever reads better on this color. */
+export function textColorOn(hex: string): string {
+  const [r, g, b] = rgb(hex);
+  return 0.299 * r + 0.587 * g + 0.114 * b > 160 ? "#1d1d1d" : "#ffffff";
+}
+
 /** How a task appears on the calendar. */
 export type EventStyle =
   /** An all-day event on the day it's due. */
@@ -30,8 +63,12 @@ export type EventStyle =
 export interface CourseSettings {
   /** Replaces the detected label, e.g. "Robotics" instead of "EECS 106A". */
   label?: string;
-  /** Null means the student chose no color; unset means Backpack picks one. */
-  color?: EventColor | null;
+  /**
+   * One of Google's colors or any color. Null means the student chose no
+   * color; unset means Backpack picks one. Any color shows exactly when each
+   * class has its own calendar, and as the nearest Google color otherwise.
+   */
+  color?: EventColor | HexColor | null;
   hidden?: boolean;
 }
 

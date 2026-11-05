@@ -23,6 +23,7 @@ export type Calendar = Pick<
   | "createCalendar"
   | "calendarExists"
   | "renameCalendar"
+  | "setCalendarColor"
   | "deleteCalendar"
   | "listEvents"
   | "insertEvent"
@@ -122,6 +123,12 @@ export async function syncOnce(store: Store, sources: Source[], calendar: Calend
       } else if (known.name !== event.calendarName) {
         await calendar.renameCalendar(known.id, event.calendarName);
         calendars[event.calendarKey] = { ...known, name: event.calendarName };
+      }
+      // A class's own calendar shows the class's color, which can be any color.
+      const current = calendars[event.calendarKey]!;
+      if (event.calendarColor && current.color !== event.calendarColor) {
+        await calendar.setCalendarColor(current.id, event.calendarColor);
+        calendars[event.calendarKey] = { ...current, color: event.calendarColor };
       }
     }
     await store.save({ calendars });

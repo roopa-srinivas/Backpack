@@ -1,4 +1,4 @@
-import type { EventColor, Settings } from "./settings.js";
+import { colorHex, isHexColor, nearestEventColor, type EventColor, type Settings } from "./settings.js";
 import { PLATFORM_NAMES, type Task } from "./types.js";
 
 type EventTime = { date: string } | { dateTime: string; timeZone: string };
@@ -19,6 +19,8 @@ export interface DesiredEvent {
   /** Which Backpack calendar it belongs in, e.g. "all" or "course:cs169a". */
   calendarKey: string;
   calendarName: string;
+  /** The calendar's own color, for one calendar per class: any "#rrggbb". */
+  calendarColor?: string;
   taskKey: string;
   hash: string;
   body: CalendarEventBody;
@@ -112,7 +114,14 @@ export function eventColor(task: Task, settings: Settings, now: number): EventCo
   if (!task.submitted && status.dueSoon && task.dueAt && Date.parse(task.dueAt) - now <= status.dueSoonHours * 60 * MINUTE) {
     return status.dueSoon;
   }
-  return settings.kinds[task.kind]?.color ?? settings.courses[task.courseKey]?.color ?? undefined;
+  const kind = settings.kinds[task.kind]?.color;
+  if (kind) return kind;
+  const course = settings.courses[task.courseKey]?.color;
+  if (!course) return undefined;
+  if (!isHexColor(course)) return course;
+  // A custom color: exact on the class's own calendar (the event takes the
+  // calendar's color), the nearest Google color everywhere else.
+  return settings.calendars === "perCourse" ? undefined : nearestEventColor(course);
 }
 
 /**
@@ -145,6 +154,7 @@ export function buildEvents(tasks: Task[], settings: Settings, now = Date.now())
 
     const lead = task.sources[0]!;
     const calendar = calendarFor(task, courseLabel, settings);
+    const calendarColor = settings.calendars === "perCourse" && course.color ? colorHex(course.color) : undefined;
     const body: Omit<CalendarEventBody, "extendedProperties"> = {
       summary,
       description: lines.join("\n"),
@@ -160,6 +170,7 @@ export function buildEvents(tasks: Task[], settings: Settings, now = Date.now())
     events.push({
       calendarKey: calendar.key,
       calendarName: calendar.name,
+      ...(calendarColor ? { calendarColor } : {}),
       taskKey: task.key,
       hash,
       body: { ...body, extendedProperties: { private: { backpack: "1", task: task.key, hash } } },

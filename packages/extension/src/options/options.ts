@@ -1,7 +1,10 @@
 import {
   assignCourseColors,
+  colorHex,
   EVENT_COLORS,
   isEarlierTerm,
+  isHexColor,
+  nearestEventColor,
   mergeAssignments,
   newestFirst,
   newestTerm,
@@ -9,8 +12,10 @@ import {
   type Term,
   type AssignmentKind,
   type EventColor,
+  type HexColor,
   type Settings,
   type Task,
+  textColorOn,
 } from "@backpack/core";
 import type { Reply, Request } from "../background.js";
 import { chromeStore } from "../state.js";
@@ -66,12 +71,16 @@ async function update(change: (settings: Settings) => Settings) {
   await render();
 }
 
-/** A row of Google Calendar's colors, with an optional "no color" choice first. */
+/**
+ * A row of Google Calendar's colors, with an optional "no color" choice
+ * first and, when `custom` is set, a color wheel for any color.
+ */
 function swatches(
-  current: EventColor | null | undefined,
+  current: EventColor | HexColor | null | undefined,
   noneLabel: string | null,
   name: string,
-  onPick: (color: EventColor | null) => void,
+  onPick: (color: EventColor | HexColor | null) => void,
+  custom = false,
 ): HTMLElement {
   const group = make("div", "swatches");
   group.setAttribute("role", "radiogroup");
@@ -93,13 +102,38 @@ function swatches(
   for (const [color, { name: colorName }] of Object.entries(EVENT_COLORS) as [EventColor, { name: string }][]) {
     option(color, colorName);
   }
+  if (custom) {
+    // Chrome's color picker: a color wheel, an eyedropper and hex input.
+    const wheel = make("label", "swatch custom");
+    const chosen = isHexColor(current);
+    wheel.setAttribute("role", "radio");
+    wheel.setAttribute("aria-checked", String(chosen));
+    wheel.title = chosen ? `Custom color ${current}` : "Pick any color";
+    if (chosen) wheel.style.background = current;
+    const input = make("input");
+    input.type = "color";
+    input.value = chosen ? current : "#e0a458";
+    input.setAttribute("aria-label", `${name}: pick any color`);
+    input.addEventListener("change", () => onPick(input.value.toLowerCase() as HexColor));
+    wheel.append(input);
+    group.append(wheel);
+  }
   return group;
 }
 
-function chip(text: string, color: EventColor | null | undefined): HTMLElement {
+/**
+ * Kinds of work and status color individual events, which can only use
+ * Google's 11 colors, so their pickers have no color wheel.
+ */
+const googleColor = (color: EventColor | HexColor | null): EventColor | undefined =>
+  color && !isHexColor(color) ? color : undefined;
+
+function chip(text: string, color: EventColor | HexColor | null | undefined): HTMLElement {
   const el = make("span", "chip", text);
-  if (color) el.style.background = EVENT_COLORS[color].hex;
-  else el.dataset.none = "true";
+  if (color) {
+    el.style.background = colorHex(color);
+    el.style.color = textColorOn(colorHex(color));
+  } else el.dataset.none = "true";
   return el;
 }
 
@@ -201,10 +235,25 @@ async function render() {
     top.append(hide);
     li.append(
       top,
-      swatches(course.color, "No color", `${label} color`, (color) =>
-        update((s) => ({ ...s, courses: { ...s.courses, [key]: { ...s.courses[key], color } } })),
+      swatches(
+        course.color,
+        "No color",
+        `${label} color`,
+        (color) => update((s) => ({ ...s, courses: { ...s.courses, [key]: { ...s.courses[key], color } } })),
+        true,
       ),
     );
+
+    // A custom color only shows exactly on the class's own calendar.
+    if (isHexColor(course.color) && settings.calendars !== "perCourse") {
+      const note = make("p", "muted hint note");
+      note.append(`Shows as ${EVENT_COLORS[nearestEventColor(course.color)].name} on a shared calendar. `);
+      const perCourse = make("button", "link", "Give each class its own calendar");
+      perCourse.type = "button";
+      perCourse.addEventListener("click", () => update((s) => ({ ...s, calendars: "perCourse" })));
+      note.append(perCourse, " for the exact color.");
+      li.append(note);
+    }
     return li;
   };
   $("courses").replaceChildren(...courses.map((c) => courseRow(c, false)));
@@ -241,7 +290,7 @@ async function render() {
       top.append(make("span", "name", label), emojiInput, reminders);
       li.append(
         top,
-        swatches(current.color, "Class color", `${label} color`, (color) => setKind({ color: color ?? undefined })),
+        swatches(current.color, "Class color", `${label} color`, (color) => setKind({ color: googleColor(color) })),
       );
       return li;
     }),
@@ -250,12 +299,12 @@ async function render() {
   const status = settings.statusColors;
   $("submitted-color").replaceChildren(
     swatches(status.submitted, "Don't change", "Submitted work color", (color) =>
-      update((s) => ({ ...s, statusColors: { ...s.statusColors, submitted: color ?? undefined } })),
+      update((s) => ({ ...s, statusColors: { ...s.statusColors, submitted: googleColor(color) } })),
     ),
   );
   $("due-soon-color").replaceChildren(
     swatches(status.dueSoon, "Don't change", "Due soon color", (color) =>
-      update((s) => ({ ...s, statusColors: { ...s.statusColors, dueSoon: color ?? undefined } })),
+      update((s) => ({ ...s, statusColors: { ...s.statusColors, dueSoon: googleColor(color) } })),
     ),
   );
   const hours = $<HTMLSelectElement>("due-soon-hours");
