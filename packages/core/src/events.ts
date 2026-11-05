@@ -1,5 +1,5 @@
 import { colorHex, isHexColor, nearestEventColor, type EventColor, type Settings } from "./settings.js";
-import { PLATFORM_NAMES, type Task } from "./types.js";
+import { PLATFORM_NAMES, type Assignment, type Task } from "./types.js";
 
 type EventTime = { date: string } | { dateTime: string; timeZone: string };
 
@@ -52,12 +52,25 @@ function formatDue(instant: number, timeZone: string): string {
   }).format(instant);
 }
 
+const SUBMIT_ORDER = { here: 0, tool: 1, elsewhere: 2 } as const;
+
+/**
+ * The copy the work is turned in at: one that takes submissions itself,
+ * then one that opens the site that does (a Gradescope assignment inside
+ * bCourses), each in platform priority order. When no copy takes the work
+ * (it's handed in on paper), the highest-priority copy.
+ */
+export function submissionCopy(task: Task): Assignment {
+  const rank = (a: Assignment) => SUBMIT_ORDER[a.submitAt ?? "here"];
+  return task.sources.reduce((best, copy) => (rank(copy) < rank(best) ? copy : best));
+}
+
 /** Fills {placeholders} in the title template; unknown ones are left as typed. */
 export function renderTitle(template: string, task: Task, courseLabel: string): string {
   const values: Record<string, string> = {
     course: courseLabel,
     title: task.title,
-    platform: PLATFORM_NAMES[task.sources[0]!.platform],
+    platform: PLATFORM_NAMES[submissionCopy(task).platform],
     kind: task.kind,
     points: task.points == null ? "" : `${task.points} pts`,
   };
@@ -86,7 +99,7 @@ function calendarFor(task: Task, courseLabel: string, settings: Settings): { key
     case "perCourse":
       return { key: `course:${task.courseKey}`, name: `Backpack · ${courseLabel}` };
     case "perPlatform": {
-      const platform = task.sources[0]!.platform;
+      const platform = submissionCopy(task).platform;
       return { key: `platform:${platform}`, name: `Backpack · ${PLATFORM_NAMES[platform]}` };
     }
     default:
@@ -149,11 +162,17 @@ export function buildEvents(tasks: Task[], settings: Settings, now = Date.now())
     // The class is in the notes, so titles can leave it out.
     const lines = [`Class: ${courseLabel}`, `Due ${formatDue(due, settings.timeZone)}`];
     if (task.points != null) lines.push(`${task.points} points`);
+    if (task.extension?.status === "approved" && task.extension.originalDueAt) {
+      lines.push(`Extended from ${formatDue(Date.parse(task.extension.originalDueAt), settings.timeZone)}`);
+    }
+    if (task.extension?.status === "pending") lines.push("Extension requested, waiting for an answer");
     if (task.submitted) lines.push("Submitted");
-    lines.push("", ...task.sources.map((s) => `${PLATFORM_NAMES[s.platform]}: ${s.url}`));
+    // Only where the work is turned in: the other copies are the same assignment.
+    const submit = submissionCopy(task);
+    const where = PLATFORM_NAMES[submit.platform];
+    lines.push("", submit.submitAt === "elsewhere" ? `${where}: ${submit.url}` : `Turn in on ${where}: ${submit.url}`);
     lines.push("", "Added by Backpack");
 
-    const lead = task.sources[0]!;
     const calendar = calendarFor(task, courseLabel, settings);
     const calendarColor = settings.calendars === "perCourse" && course.color ? colorHex(course.color) : undefined;
     const body: Omit<CalendarEventBody, "extendedProperties"> = {
@@ -165,7 +184,7 @@ export function buildEvents(tasks: Task[], settings: Settings, now = Date.now())
         useDefault: false,
         overrides: (kind.reminders ?? settings.reminders).map((minutes) => ({ method: "popup", minutes })),
       },
-      source: { title: PLATFORM_NAMES[lead.platform], url: lead.url },
+      source: { title: where, url: submit.url },
     };
     const hash = fingerprint(JSON.stringify(body));
     events.push({

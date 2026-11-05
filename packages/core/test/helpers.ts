@@ -4,6 +4,7 @@ const COURSES = {
   canvas: { platform: "canvas", id: "1500", name: "COMPSCI 169A - LEC 001", code: "COMPSCI 169A" },
   gradescope: { platform: "gradescope", id: "880", name: "CS 169A Fall 2026" },
   prairielearn: { platform: "prairielearn", id: "77", name: "CS 169A: Software Engineering" },
+  flextensions: { platform: "flextensions", id: "31", name: "COMPSCI 169A - LEC 001", code: "COMPSCI 169A", term: "Fall 2026", sameAs: "canvas:1500" },
 } as const;
 
 let nextId = 1;

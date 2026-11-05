@@ -215,6 +215,71 @@ describe("no repeated assignments", () => {
   });
 });
 
+describe("cross-referencing Flextensions", () => {
+  it("joins a Flextensions copy to the bCourses copy it names, whatever the title or date", () => {
+    const canvas = assignment("canvas", { title: "HW3" });
+    const flex = assignment("flextensions", {
+      title: "Homework Three",
+      dueAt: "2026-11-02T06:59:00Z",
+      sameAs: `canvas:${canvas.id}`,
+      submitAt: "elsewhere",
+    });
+    const tasks = mergeAssignments([flex, canvas]);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.sources.map((s) => s.platform)).toEqual(["canvas", "flextensions"]);
+    expect(tasks[0]!.title).toBe("HW3");
+  });
+
+  it("puts a Flextensions class with the bCourses site it names, whatever it's called", () => {
+    const canvas = assignment("canvas");
+    const flex = assignment("flextensions", {
+      course: { platform: "flextensions", id: "8", name: "Fall 2026 Software Eng", sameAs: "canvas:1500" },
+    });
+    const tasks = mergeAssignments([canvas, flex]);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.courseLabel).toBe("CS 169A");
+  });
+
+  it("links a bCourses copy showing the extended date to a Gradescope copy still showing the old one", () => {
+    const gradescope = assignment("gradescope");
+    const canvas = assignment("canvas", { dueAt: "2026-10-28T06:59:00Z" });
+    const flex = assignment("flextensions", {
+      dueAt: "2026-10-28T06:59:00Z",
+      extension: { status: "approved", originalDueAt: "2026-10-24T06:59:00Z" },
+      submitAt: "elsewhere",
+    });
+    for (const order of [[gradescope, canvas, flex], [flex, canvas, gradescope], [canvas, flex, gradescope]]) {
+      const tasks = mergeAssignments(order);
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]!.key).toBe(`gradescope:${gradescope.id}`);
+      expect(tasks[0]!.dueAt).toBe("2026-10-28T06:59:00Z");
+      expect(tasks[0]!.extension).toEqual({ status: "approved", originalDueAt: "2026-10-24T06:59:00Z" });
+    }
+  });
+
+  it("never joins two copies from one site through a third", () => {
+    const hw = assignment("canvas", { title: "Reading Response", dueAt: "2026-10-24T06:59:00Z" });
+    const other = assignment("canvas", { title: "Reading Response", dueAt: "2026-10-26T06:59:00Z" });
+    const flex = assignment("flextensions", {
+      title: "Reading Response",
+      dueAt: "2026-10-26T06:59:00Z",
+      extension: { status: "approved", originalDueAt: "2026-10-24T06:59:00Z" },
+    });
+    expect(mergeAssignments([hw, other, flex])).toHaveLength(2);
+  });
+
+  it("keeps the later deadline when the site already shows a longer one", () => {
+    const tasks = mergeAssignments([
+      assignment("gradescope", { dueAt: "2026-10-29T06:59:00Z" }),
+      assignment("flextensions", {
+        dueAt: "2026-10-28T06:59:00Z",
+        extension: { status: "approved", originalDueAt: "2026-10-24T06:59:00Z" },
+      }),
+    ]);
+    expect(tasks.map((t) => t.dueAt)).toEqual(["2026-10-29T06:59:00Z"]);
+  });
+});
+
 describe("classes with several names", () => {
   const course = (platform: "canvas" | "gradescope" | "prairielearn", id: string, name: string, extra: object = {}) => ({
     platform,

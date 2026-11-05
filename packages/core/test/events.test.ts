@@ -91,11 +91,70 @@ describe("buildEvents", () => {
     expect(buildEvents(tasks, settings(), NOW)).toEqual([]);
   });
 
-  it("lists every platform link in the description", () => {
-    const tasks = mergeAssignments([assignment("canvas"), assignment("gradescope")]);
+  it("links only to where the work is turned in", () => {
+    const tasks = mergeAssignments([
+      assignment("canvas", { submitAt: "tool" }),
+      assignment("gradescope"),
+      assignment("flextensions", { submitAt: "elsewhere" }),
+    ]);
+    expect(tasks).toHaveLength(1);
     const { description, source } = buildEvents(tasks, settings(), NOW)[0]!.body;
-    expect(description).toMatch(/Gradescope: https:\/\/gradescope\.example\/\d+\nCanvas: https:\/\/canvas\.example\/\d+/);
-    expect(source.title).toBe("Gradescope");
+    expect(description).toMatch(/\nTurn in on Gradescope: https:\/\/gradescope\.example\/\d+\n/);
+    expect(description).not.toMatch(/canvas\.example|flextensions\.example/);
+    expect(source).toEqual({ title: "Gradescope", url: tasks[0]!.sources[0]!.url });
+  });
+
+  it("links to bCourses when that's where the work is turned in, even with a placeholder elsewhere", () => {
+    const canvas = assignment("canvas", { submitAt: "here" });
+    const tasks = mergeAssignments([canvas, assignment("gradescope", { submitAt: "elsewhere" })]);
+    const { description, source } = buildEvents(tasks, settings(), NOW)[0]!.body;
+    expect(description).toContain(`Turn in on Canvas: ${canvas.url}`);
+    expect(description).not.toMatch(/gradescope\.example/);
+    expect(source.title).toBe("Canvas");
+  });
+
+  it("prefers a site that takes the work over one that opens it inside another", () => {
+    const pl = assignment("prairielearn");
+    const tasks = mergeAssignments([assignment("canvas", { submitAt: "tool" }), pl]);
+    expect(buildEvents(tasks, settings(), NOW)[0]!.body.source.url).toBe(pl.url);
+  });
+
+  it("still links somewhere when no site takes the work", () => {
+    const canvas = assignment("canvas", { submitAt: "elsewhere" });
+    const { description } = buildEvents(mergeAssignments([canvas]), settings(), NOW)[0]!.body;
+    expect(description).toContain(`\nCanvas: ${canvas.url}\n`);
+  });
+
+  it("names the turn-in site in titles and per-site calendars", () => {
+    const tasks = mergeAssignments([assignment("canvas", { submitAt: "here" }), assignment("gradescope", { submitAt: "elsewhere" })]);
+    const [event] = buildEvents(tasks, settings({ calendars: "perPlatform", titleTemplate: "{title} ({platform})" }), NOW);
+    expect(event!.calendarName).toBe("Backpack · Canvas");
+    expect(event!.body.summary).toBe("Homework 3: Ruby Intro (Canvas)");
+  });
+
+  it("uses an approved extension's deadline and notes the old one", () => {
+    const tasks = mergeAssignments([
+      assignment("gradescope"),
+      assignment("flextensions", {
+        submitAt: "elsewhere",
+        dueAt: "2026-10-27T06:59:00Z",
+        extension: { status: "approved", originalDueAt: "2026-10-24T06:59:00Z" },
+      }),
+    ]);
+    expect(tasks).toHaveLength(1);
+    const [event] = buildEvents(tasks, settings({ style: { type: "deadline", minutes: 30 } }), NOW);
+    expect(event!.body.end).toEqual({ dateTime: "2026-10-27T06:59:00.000Z", timeZone: "America/Los_Angeles" });
+    expect(event!.body.description).toMatch(/Due Mon, Oct 26, 11:59 PM\nExtended from Fri, Oct 23, 11:59 PM\n/);
+    expect(event!.body.description).toMatch(/Turn in on Gradescope/);
+  });
+
+  it("notes an extension request still waiting for an answer, keeping the deadline", () => {
+    const tasks = mergeAssignments([
+      assignment("gradescope"),
+      assignment("flextensions", { submitAt: "elsewhere", extension: { status: "pending", originalDueAt: null } }),
+    ]);
+    const [event] = buildEvents(tasks, settings(), NOW);
+    expect(event!.body.description).toMatch(/Due Fri, Oct 23, 11:59 PM\nExtension requested, waiting for an answer\n/);
   });
 
   it("gives identical tasks identical fingerprints, and changed ones new ones", () => {

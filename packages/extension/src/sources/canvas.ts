@@ -58,6 +58,29 @@ function kindOf(assignment: CanvasAssignment): AssignmentKind {
 
 const SUBMITTED_STATES = new Set(["submitted", "graded", "pending_review"]);
 
+/** Submission types that hand the work in on bCourses itself. */
+const SUBMIT_HERE = new Set([
+  "online_upload",
+  "online_text_entry",
+  "online_url",
+  "online_quiz",
+  "discussion_topic",
+  "media_recording",
+  "student_annotation",
+]);
+
+/**
+ * Where the work is turned in: on bCourses, through a tool bCourses opens
+ * (Gradescope, PrairieLearn), or somewhere else entirely ("none", "on_paper"
+ * and "not_graded" are placeholders for a grade).
+ */
+function submitAtOf(assignment: CanvasAssignment): Assignment["submitAt"] {
+  const types = assignment.submission_types;
+  if (types.some((t) => SUBMIT_HERE.has(t))) return "here";
+  if (types.includes("external_tool")) return "tool";
+  return "elsewhere";
+}
+
 export function toAssignment(course: CanvasCourse, item: CanvasAssignment): Assignment {
   return {
     platform: "canvas",
@@ -69,6 +92,7 @@ export function toAssignment(course: CanvasCourse, item: CanvasAssignment): Assi
     submitted: Boolean(item.submission?.submitted_at) || SUBMITTED_STATES.has(item.submission?.workflow_state ?? ""),
     kind: kindOf(item),
     points: item.points_possible,
+    submitAt: submitAtOf(item),
   };
 }
 

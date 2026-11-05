@@ -1,10 +1,11 @@
 /** Where an assignment came from. */
-export type Platform = "canvas" | "gradescope" | "prairielearn";
+export type Platform = "canvas" | "gradescope" | "prairielearn" | "flextensions";
 
 export const PLATFORM_NAMES: Record<Platform, string> = {
   canvas: "Canvas",
   gradescope: "Gradescope",
   prairielearn: "PrairieLearn",
+  flextensions: "Flextensions",
 };
 
 export type AssignmentKind = "assignment" | "quiz" | "exam" | "discussion" | "lab" | "project" | "other";
@@ -19,6 +20,8 @@ export interface Course {
   code?: string;
   /** The term as the platform names it, e.g. "Fall 2026", when it says. */
   term?: string;
+  /** The same course on another platform, when this one says which: "canvas:1500". */
+  sameAs?: string;
 }
 
 /** One assignment as read from one platform, before merging. */
@@ -34,6 +37,20 @@ export interface Assignment {
   submitted: boolean;
   kind: AssignmentKind;
   points?: number | null;
+  /**
+   * Whether work is turned in at `url`: "here", "tool" (through another site
+   * opened inside this one, like a Gradescope assignment in bCourses), or
+   * "elsewhere" (a placeholder for a grade, work on paper, an extension
+   * form). Unset means "here".
+   */
+  submitAt?: "here" | "tool" | "elsewhere";
+  /** The same assignment on another platform, when this copy says which: "canvas:4521". */
+  sameAs?: string;
+  /**
+   * An extension the student asked for. When it's approved, `dueAt` is the
+   * new deadline and `originalDueAt` the old one.
+   */
+  extension?: { status: "approved" | "pending"; originalDueAt: string | null };
 }
 
 /**
@@ -53,6 +70,8 @@ export interface Task {
   points: number | null;
   /** Every platform copy, highest-priority platform first. */
   sources: Assignment[];
+  /** An extension one of the copies knows about; `dueAt` already includes an approved one. */
+  extension?: { status: "approved" | "pending"; originalDueAt: string | null };
   /** Other names the course goes by, e.g. ME 106A for EECS 106A. */
   alsoKnownAs?: { key: string; label: string }[];
 }

@@ -2,8 +2,11 @@ import { courseCodes, courseTitleWords, identifyCourse, type CourseIdentity } fr
 import { courseTerm, type Term } from "./terms.js";
 import type { Assignment, Platform, Task } from "./types.js";
 
-/** Platforms students submit on come first: their titles and due dates win. */
-export const DEFAULT_PLATFORM_PRIORITY: Platform[] = ["gradescope", "prairielearn", "canvas"];
+/**
+ * Platforms students submit on come first: their titles and due dates win.
+ * Flextensions only lists work to ask for more time on, so it comes last.
+ */
+export const DEFAULT_PLATFORM_PRIORITY: Platform[] = ["gradescope", "prairielearn", "canvas", "flextensions"];
 
 /** Copies of one assignment are expected within this window of each other. */
 const SAME_DUE_WINDOW_MS = 36 * 60 * 60 * 1000;
@@ -69,13 +72,21 @@ function dueClose(a: string, b: string): boolean {
   return Math.abs(Date.parse(a) - Date.parse(b)) <= SAME_DUE_WINDOW_MS;
 }
 
+/** The deadlines a copy knows: its own, and the one before an extension. */
+const deadlines = (a: Assignment) => [a.dueAt, a.extension?.originalDueAt].filter((d): d is string => Boolean(d));
+
 /**
- * Whether two copies are the same piece of work. When one copy has no due
+ * Whether two copies are the same piece of work. A copy that says which
+ * other copy it is ("sameAs") settles it. Otherwise the titles have to match
+ * and a deadline of each has to be close: a copy that knows about an
+ * extension matches both the old and the new date. When one copy has no due
  * date (a placeholder, or a site that hides past deadlines), the titles have
  * to agree exactly, since there's no date to back the match up.
  */
 function sameWork(a: Assignment, b: Assignment): boolean {
-  if (a.dueAt && b.dueAt) return titlesMatch(a.title, b.title) && dueClose(a.dueAt, b.dueAt);
+  if (a.sameAs === `${b.platform}:${b.id}` || b.sameAs === `${a.platform}:${a.id}`) return true;
+  const [da, db] = [deadlines(a), deadlines(b)];
+  if (da.length && db.length) return titlesMatch(a.title, b.title) && da.some((x) => db.some((y) => dueClose(x, y)));
   return titlesMatchExactly(a.title, b.title);
 }
 
@@ -171,6 +182,7 @@ function titlesAgree(a: Set<string>, b: Set<string>): boolean {
  *   written short (PHYS 7A and PHYSICS 7A, EE 16A and EECS 16A);
  * - one has no code at all ("Robotics" on Gradescope) and it shares
  *   assignments with exactly one course;
+ * - one says it's the other (Flextensions names the bCourses site it's for);
  * - the student said so (`merges`).
  *
  * Matching homework alone never joins two courses with codes: CHEM 1A and
@@ -285,6 +297,12 @@ function courseIdentities(
     if (best && best[1] >= LINKING_MATCHES && (!runnerUp || best[1] > runnerUp[1])) groups.join(identity.key, best[0]);
   }
 
+  for (const [course, identity] of identities) {
+    const sameAs = byCourse.get(course)![0]!.course.sameAs;
+    const other = sameAs ? identities.get(sameAs) : undefined;
+    if (other) groups.join(identity.key, other.key, { force: true });
+  }
+
   for (const [from, to] of Object.entries(merges)) {
     if (!labels.has(to)) continue;
     groups.join(from, to, { force: true });
@@ -331,7 +349,10 @@ export interface MergeOptions {
 /**
  * Groups copies of the same assignment into tasks, so each piece of work is
  * on the calendar once however many sites list it. Copies merge when they're
- * in the same course, with matching titles and due dates within 36 hours.
+ * in the same course, with matching titles and due dates within 36 hours, or
+ * when one says which copy it is. A copy can link two others: Flextensions
+ * knows both the old and the extended deadline, so it joins a Gradescope
+ * copy still showing the old one to a bCourses copy showing the new one.
  * Copies from one course site never merge with each other (two "Reading
  * Response"s there are two pieces of work), but copies from two sites of the
  * same class on one platform do, like a bCourses lecture site and lab site.
@@ -352,32 +373,56 @@ export function mergeAssignments(assignments: Assignment[], options: MergeOption
     (a, b) => rank(a.platform) - rank(b.platform) || a.platform.localeCompare(b.platform) || a.id.localeCompare(b.id),
   );
 
-  const groups: { course: LinkedCourse; courseKey: string; courseLabel: string; items: Assignment[] }[] = [];
+  type Group = { course: LinkedCourse; courseKey: string; courseLabel: string; items: Assignment[] };
+  let groups: Group[] = [];
+  const sharesSite = (items: Assignment[], others: Assignment[]) =>
+    items.some((i) => others.some((o) => platformCourse(i) === platformCourse(o)));
   for (const assignment of sorted) {
     const course = courses.get(platformCourse(assignment))!;
-    const group = groups.find(
+    const matches = groups.filter(
       (g) =>
         g.courseKey === course.key &&
-        !g.items.some((i) => platformCourse(i) === platformCourse(assignment)) &&
-        sameWork(g.items[0]!, assignment),
+        !sharesSite(g.items, [assignment]) &&
+        g.items.some((i) => sameWork(i, assignment)),
     );
-    if (group) group.items.push(assignment);
-    else groups.push({ course, courseKey: course.key, courseLabel: course.label, items: [assignment] });
+    const [home, ...others] = matches;
+    if (!home) {
+      groups.push({ course, courseKey: course.key, courseLabel: course.label, items: [assignment] });
+      continue;
+    }
+    home.items.push(assignment);
+    // The copy is the missing link between groups: they're one assignment,
+    // unless that would put two copies from one site together.
+    for (const other of others) {
+      if (sharesSite(home.items, other.items)) continue;
+      home.items.push(...other.items);
+      groups = groups.filter((g) => g !== other);
+    }
   }
 
-  return groups.map(({ course, courseKey, courseLabel, items }) => {
+  const order = new Map(sorted.map((a, i) => [a, i]));
+  return groups.map(({ course, courseKey, courseLabel, items: unordered }) => {
+    const items = [...unordered].sort((a, b) => order.get(a)! - order.get(b)!);
     const lead = items[0]!;
+    // An approved extension moves the deadline, even if the site the work is
+    // turned in on hasn't caught up yet.
+    const extension = items.find((i) => i.extension?.status === "approved") ?? items.find((i) => i.extension);
+    const leadDue = lead.dueAt ?? items.find((i) => i.dueAt)?.dueAt ?? null;
+    const extendedDue = extension?.extension?.status === "approved" ? extension.dueAt : null;
+    const dueAt =
+      extendedDue && (!leadDue || Date.parse(extendedDue) > Date.parse(leadDue)) ? extendedDue : leadDue;
     return {
       // Keyed by the lead copy: a Canvas copy appearing or vanishing leaves the key alone.
       key: `${lead.platform}:${lead.id}`,
       courseKey,
       courseLabel,
       title: lead.title,
-      dueAt: lead.dueAt ?? items.find((i) => i.dueAt)?.dueAt ?? null,
+      dueAt,
       submitted: items.some((i) => i.submitted),
       kind: lead.kind,
       points: items.find((i) => i.points != null)?.points ?? null,
       sources: items,
+      ...(extension?.extension ? { extension: extension.extension } : {}),
       ...(course.alsoKnownAs.length ? { alsoKnownAs: course.alsoKnownAs } : {}),
     };
   });
