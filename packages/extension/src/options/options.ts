@@ -5,6 +5,7 @@ import {
   isEarlierTerm,
   isHexColor,
   nearestEventColor,
+  switchCalendars,
   mergeAssignments,
   newestFirst,
   newestTerm,
@@ -250,7 +251,7 @@ async function render() {
       note.append(`Shows as ${EVENT_COLORS[nearestEventColor(course.color)].name} on a shared calendar. `);
       const perCourse = make("button", "link", "Give each class its own calendar");
       perCourse.type = "button";
-      perCourse.addEventListener("click", () => update((s) => ({ ...s, calendars: "perCourse" })));
+      perCourse.addEventListener("click", () => update((s) => switchCalendars(s, "perCourse")));
       note.append(perCourse, " for the exact color.");
       li.append(note);
     }

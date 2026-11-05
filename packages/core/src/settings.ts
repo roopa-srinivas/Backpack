@@ -154,3 +154,32 @@ export function assignCourseColors(settings: Settings, courseKeys: string[]): Se
   });
   return changed ? { ...settings, courses } : null;
 }
+
+/** Whether event titles include the class name. */
+export const titleHasCourse = (template: string) => template.includes("{course}");
+
+/** The title template without the class name: "{course} · {title}" -> "{title}". */
+export function dropCourseFromTitle(template: string): string {
+  const out = template
+    .replace(/^\s*\{course\}\s*[·|:\-–—]?\s*/, "") // "{course} · {title}"
+    .replace(/\s*[·|:\-–—]?\s*\{course\}\s*$/, "") // "{title} - {course}"
+    .replace(/\{course\}/g, "") // anywhere else
+    .replace(/\(\s*\)|\[\s*\]/g, "") // brackets it leaves empty
+    .replace(/\s+/g, " ")
+    .trim();
+  return out || "{title}";
+}
+
+/** The title template with the class name in front, if it isn't there already. */
+export const addCourseToTitle = (template: string) => (titleHasCourse(template) ? template : `{course} · ${template}`);
+
+/**
+ * Switches the calendar layout. With one calendar per class, the calendar
+ * already says which class an event is for, so the class name comes out of
+ * titles; on a shared calendar it goes back in.
+ */
+export function switchCalendars(settings: Settings, calendars: Settings["calendars"]): Settings {
+  const titleTemplate =
+    calendars === "perCourse" ? dropCourseFromTitle(settings.titleTemplate) : addCourseToTitle(settings.titleTemplate);
+  return { ...settings, calendars, titleTemplate };
+}

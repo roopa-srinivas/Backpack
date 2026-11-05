@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   assignCourseColors,
   buildEvents,
+  addCourseToTitle,
   COURSE_PALETTE,
   defaultSettings,
+  dropCourseFromTitle,
+  switchCalendars,
   nearestEventColor,
   textColorOn,
   mergeAssignments,
@@ -247,5 +250,31 @@ describe("personalizing", () => {
     const next = assignCourseColors(settings(), keys)!;
     expect(keys.every((k) => next.courses[k]!.color)).toBe(true);
     expect(new Set(keys.map((k) => next.courses[k]!.color)).size).toBe(COURSE_PALETTE.length);
+  });
+});
+
+describe("class name in titles and notes", () => {
+  it("puts the class in the event's notes", () => {
+    const [event] = buildEvents(mergeAssignments([assignment("gradescope")]), settings({ titleTemplate: "{title}" }), NOW);
+    expect(event!.body.summary).toBe("Homework 3: Ruby Intro");
+    expect(event!.body.description.split("\n")[0]).toBe("Class: CS 169A");
+    const renamed = buildEvents(mergeAssignments([assignment("gradescope")]), settings({ courses: { cs169a: { label: "Software Eng" } } }), NOW);
+    expect(renamed[0]!.body.description.split("\n")[0]).toBe("Class: Software Eng");
+  });
+
+  it("takes the class out of a title template and puts it back", () => {
+    expect(dropCourseFromTitle("{course} · {title}")).toBe("{title}");
+    expect(dropCourseFromTitle("{title} ({course})")).toBe("{title}");
+    expect(dropCourseFromTitle("{title} - {course}")).toBe("{title}");
+    expect(dropCourseFromTitle("{course}: {title} {points}")).toBe("{title} {points}");
+    expect(dropCourseFromTitle("{course}")).toBe("{title}");
+    expect(addCourseToTitle("{title}")).toBe("{course} · {title}");
+    expect(addCourseToTitle("{course} · {title}")).toBe("{course} · {title}");
+  });
+
+  it("drops the class from titles when each class gets its own calendar, and brings it back after", () => {
+    const own = switchCalendars(settings(), "perCourse");
+    expect(own).toMatchObject({ calendars: "perCourse", titleTemplate: "{title}" });
+    expect(switchCalendars(own, "single")).toMatchObject({ calendars: "single", titleTemplate: "{course} · {title}" });
   });
 });

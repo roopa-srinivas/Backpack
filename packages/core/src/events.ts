@@ -146,7 +146,8 @@ export function buildEvents(tasks: Task[], settings: Settings, now = Date.now())
     if (task.submitted && settings.submitted === "check") summary = `✓ ${summary}`;
     const color = eventColor(task, settings, now);
 
-    const lines = [`Due ${formatDue(due, settings.timeZone)}`];
+    // The class is in the notes, so titles can leave it out.
+    const lines = [`Class: ${courseLabel}`, `Due ${formatDue(due, settings.timeZone)}`];
     if (task.points != null) lines.push(`${task.points} points`);
     if (task.submitted) lines.push("Submitted");
     lines.push("", ...task.sources.map((s) => `${PLATFORM_NAMES[s.platform]}: ${s.url}`));
