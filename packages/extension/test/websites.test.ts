@@ -44,7 +44,7 @@ const coursePaths = (id: number | string) => ({
   modules: `/api/v1/courses/${id}/modules?include[]=items&per_page=100`,
   announcements: `/api/v1/courses/${id}/discussion_topics?only_announcements=true&per_page=100`,
 });
-const COURSES = "/api/v1/users/self/courses?enrollment_state=active&per_page=100";
+const COURSES = "/api/v1/users/self/courses?enrollment_state=active&include[]=term&per_page=100";
 
 describe("normalizeWebsiteUrl", () => {
   it("adds https and cleans up what students type", () => {
@@ -391,6 +391,38 @@ describe("refreshCourseWebsites", () => {
     const { fetchImpl } = fakeCanvas({ [COURSES]: { json: {}, status: 401 } });
     await expect(refreshCourseWebsites(store, HOST, { now: NOW, fetchImpl })).rejects.toThrow(/Sign in to bcourses/);
     expect(store.state.courseWebsites).toEqual({});
+  });
+});
+
+describe("earlier semesters", () => {
+  const canvasOn = { platforms: ["canvas" as const], canvasHost: HOST };
+  const withTerms = (): Record<string, Route> => ({
+    [COURSES]: {
+      json: [
+        { id: 1500, name: "COMPSCI 61A - LEC 001", course_code: "COMPSCI 61A", term: { name: "Fall 2026" } },
+        { id: 1400, name: "COMPSCI 61B - LEC 001", course_code: "COMPSCI 61B", term: { name: "Spring 2026" } },
+        { id: 1800, name: "Golden Bear Orientation", course_code: "GBO", term: { name: "Default Term" } },
+      ],
+    },
+  });
+
+  it("saves each course's term, and doesn't ask about earlier semesters' websites", async () => {
+    const store = memoryStore(canvasOn);
+    await refreshCourseWebsites(store, HOST, { now: NOW, fetchImpl: fakeCanvas(withTerms()).fetchImpl });
+    expect(store.state.courseWebsites["1500"]).toMatchObject({ term: "Fall 2026", status: "missing" });
+    expect(store.state.courseWebsites["1400"]).toMatchObject({ term: "Spring 2026", status: "missing" });
+    expect(store.state.courseWebsites["1800"]!.term).toBeUndefined();
+    // CS 61B is from last semester; the orientation site has no term, so it still counts.
+    expect(missingWebsites(store.state, NOW).map((w) => w.label).sort()).toEqual(["CS 61A", "GBO"]);
+  });
+
+  it("doesn't look again each week for an earlier semester's website", async () => {
+    const store = memoryStore(canvasOn);
+    await refreshCourseWebsites(store, HOST, { now: NOW, fetchImpl: fakeCanvas(withTerms()).fetchImpl });
+    const later = fakeCanvas(withTerms());
+    await refreshCourseWebsites(store, HOST, { now: NOW + RECHECK_MS, fetchImpl: later.fetchImpl });
+    expect(later.calls.some((p) => p.startsWith("/api/v1/courses/1400"))).toBe(false);
+    expect(later.calls.some((p) => p.startsWith("/api/v1/courses/1500"))).toBe(true);
   });
 });
 

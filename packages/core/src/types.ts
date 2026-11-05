@@ -17,6 +17,8 @@ export interface Course {
   name: string;
   /** Short code when the platform has one, e.g. "COMPSCI 169A". */
   code?: string;
+  /** The term as the platform names it, e.g. "Fall 2026", when it says. */
+  term?: string;
 }
 
 /** One assignment as read from one platform, before merging. */

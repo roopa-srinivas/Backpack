@@ -1,7 +1,9 @@
 import {
   assignCourseColors,
   buildEvents,
+  isEarlierTerm,
   mergeAssignments,
+  newestTerm,
   planSync,
   PLATFORM_NAMES,
   type Assignment,
@@ -82,7 +84,9 @@ export async function syncOnce(store: Store, sources: Source[], calendar: Calend
     // New courses get a color. Settings are read fresh, so a change made on
     // the settings page while this sync was reading isn't overwritten.
     const latestSettings = (await store.load()).settings;
-    const colored = assignCourseColors(latestSettings, tasks.map((t) => t.courseKey));
+    // Only this semester's classes compete for distinct colors.
+    const current = tasks.filter((t) => !isEarlierTerm(newestTerm(t.sources.map((s) => s.course)), now));
+    const colored = assignCourseColors(latestSettings, current.map((t) => t.courseKey));
     if (colored) await store.save({ settings: colored });
     const settings = colored ?? latestSettings;
     const desired = buildEvents(tasks, settings, now);

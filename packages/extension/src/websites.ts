@@ -1,3 +1,4 @@
+import { isEarlierTerm, parseTerm } from "@backpack/core";
 import type { State } from "./state.js";
 
 /**
@@ -17,13 +18,21 @@ export interface CourseWebsite {
   status: "found" | "manual" | "none" | "missing";
   /** Where on bCourses it was found, e.g. "Syllabus". */
   foundIn?: string;
+  /** The course's term, e.g. "Fall 2026", when bCourses says. */
+  term?: string;
   checkedAt: number;
 }
 
-/** Courses whose website Backpack couldn't find and the student hasn't filled in. */
-export function missingWebsites(state: State): CourseWebsite[] {
+/** True for a course from a semester before this one. */
+export const isEarlierCourse = (website: CourseWebsite, now = Date.now()) => isEarlierTerm(parseTerm(website.term), now);
+
+/**
+ * This semester's courses whose website Backpack couldn't find and the
+ * student hasn't filled in. Earlier semesters' courses never need attention.
+ */
+export function missingWebsites(state: State, now = Date.now()): CourseWebsite[] {
   if (!state.platforms.includes("canvas")) return [];
-  return Object.values(state.courseWebsites).filter((w) => w.status === "missing");
+  return Object.values(state.courseWebsites).filter((w) => w.status === "missing" && !isEarlierCourse(w, now));
 }
 
 /**

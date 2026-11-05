@@ -209,6 +209,14 @@ describe("personalizing", () => {
     expect(assignCourseColors(next, ["cs61a", "cs169a"])).toBeNull();
   });
 
+  it("only counts the courses being colored, so old ones don't crowd out this term's", () => {
+    // Every color is taken by earlier semesters' classes.
+    const old = Object.fromEntries(COURSE_PALETTE.map((color, i) => [`old${i}`, { color }]));
+    const next = assignCourseColors(settings({ courses: old }), ["cs61a", "cs70"])!;
+    expect(next.courses.cs61a!.color).toBe(COURSE_PALETTE[0]);
+    expect(next.courses.cs70!.color).toBe(COURSE_PALETTE[1]);
+  });
+
   it("reuses colors once there are more courses than colors", () => {
     const keys = Array.from({ length: COURSE_PALETTE.length + 2 }, (_, i) => `c${String(i).padStart(2, "0")}`);
     const next = assignCourseColors(settings(), keys)!;

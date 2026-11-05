@@ -89,7 +89,7 @@ describe("Gradescope parsing", () => {
     expect(hw).toEqual({
       platform: "gradescope",
       id: "5001",
-      course: { platform: "gradescope", id: "880", name: "Software Engineering", code: "CS 169A" },
+      course: { platform: "gradescope", id: "880", name: "Software Engineering", code: "CS 169A", term: "Fall 2026" },
       title: "HW 3: Ruby Intro",
       url: "https://www.gradescope.com/courses/880/assignments/5001/submissions/90",
       dueAt: "2026-10-24T06:59:00.000Z",
