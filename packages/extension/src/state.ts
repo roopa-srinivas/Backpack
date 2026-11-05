@@ -24,7 +24,7 @@ export interface State {
   /** The school's PrairieLearn host; null means the shared us.prairielearn.com. */
   prairielearnHost?: string | null;
   /** Backpack's calendars by key ("all", "course:cs169a", ...). */
-  calendars: Record<string, { id: string; name: string }>;
+  calendars: Record<string, { id: string; name: string; color?: string }>;
   /**
    * Calendars this computer created. If two computers each made one at the
    * same time, the one not in the shared list is this computer's to clean up.

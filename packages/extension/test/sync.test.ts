@@ -20,6 +20,11 @@ class FakeCalendar implements Calendar {
   async calendarExists(id: string) {
     return this.calendars.has(id);
   }
+  colors = new Map<string, string>();
+  async setCalendarColor(id: string, color: string) {
+    this.colors.set(id, color);
+    this.calls.push(`setCalendarColor ${color}`);
+  }
   async renameCalendar(id: string, name: string) {
     this.calendars.get(id)!.name = name;
     this.calls.push(`renameCalendar ${name}`);
@@ -161,6 +166,39 @@ describe("syncOnce", () => {
     expect(s.state.settings.courses.cs169a?.color).toBe("11");
     const colors = [...google.calendars.values()].flatMap((c) => [...c.events.values()]).map((e) => ("foreign" in e ? null : e.colorId));
     expect(colors.sort()).toEqual(["11", eecs106a!.color].sort());
+  });
+
+  it("colors each class's own calendar with any color, once", async () => {
+    const s = store();
+    await s.save({
+      settings: { ...s.state.settings, calendars: "perCourse", courses: { cs169a: { color: "#ff6f61" }, eecs106a: { color: "3" } } },
+    });
+    const google = new FakeCalendar();
+    await syncOnce(s, [canvas], google, NOW);
+    expect([...google.colors.values()].sort()).toEqual(["#8E24AA", "#ff6f61"]);
+
+    google.calls = [];
+    await syncOnce(s, [canvas], google, NOW);
+    expect(google.calls.filter((c) => c.startsWith("setCalendarColor"))).toEqual([]);
+  });
+
+  it("puts a cross-listed class on one calendar, however each site names it", async () => {
+    const s = store();
+    await s.save({ settings: { ...s.state.settings, calendars: "perCourse" } });
+    const google = new FakeCalendar();
+    const gradescope: Source = {
+      platform: "gradescope",
+      fetch: async () => [
+        {
+          ...canvasAssignment("5", "Lab 4: Kinematics", "2026-10-22T06:59:00Z"),
+          platform: "gradescope",
+          course: { platform: "gradescope", id: "880", name: "ME C106A" },
+        },
+      ],
+    };
+    await syncOnce(s, [canvas, gradescope], google, NOW);
+    expect([...google.calendars.values()].map((c) => c.name).sort()).toEqual(["Backpack · CS 169A", "Backpack · EECS 106A"]);
+    expect(google.summaries()).toHaveLength(2);
   });
 
   it("doesn't spend a color on a class from an earlier semester", async () => {

@@ -4,6 +4,8 @@ import {
   buildEvents,
   COURSE_PALETTE,
   defaultSettings,
+  nearestEventColor,
+  textColorOn,
   mergeAssignments,
   planSync,
   renderTitle,
@@ -197,6 +199,29 @@ describe("personalizing", () => {
     expect(minutes(event({ kind: "exam" }, { kinds }))).toEqual([10080, 1440]);
     expect(minutes(event({ kind: "discussion" }, { kinds }))).toEqual([]);
     expect(minutes(event({ kind: "lab" }, { kinds }))).toEqual([1440, 120]);
+  });
+
+  it("uses any color exactly on a class's own calendar, and the nearest Google color elsewhere", () => {
+    const custom = { cs169a: { color: "#ff6f61" as const } }; // coral
+    const shared = event({}, { courses: custom });
+    expect(shared.body.colorId).toBe(nearestEventColor("#ff6f61"));
+    expect(shared.calendarColor).toBeUndefined();
+
+    const own = event({}, { courses: custom, calendars: "perCourse" });
+    expect(own.body.colorId).toBeUndefined(); // the event takes the calendar's exact color
+    expect(own.calendarColor).toBe("#ff6f61");
+
+    const google = event({}, { courses, calendars: "perCourse" });
+    expect(google.body.colorId).toBe("7");
+    expect(google.calendarColor).toBe("#039BE5");
+  });
+
+  it("finds the nearest Google color and readable text", () => {
+    expect(nearestEventColor("#039BE5")).toBe("7");
+    expect(nearestEventColor("#ff0000")).toBe("11");
+    expect(nearestEventColor("#0b8043")).toBe("10");
+    expect(textColorOn("#F6BF26")).toBe("#1d1d1d");
+    expect(textColorOn("#3F51B5")).toBe("#ffffff");
   });
 
   it("gives new courses distinct colors and leaves chosen ones alone", () => {

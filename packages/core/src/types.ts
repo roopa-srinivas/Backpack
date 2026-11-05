@@ -53,4 +53,6 @@ export interface Task {
   points: number | null;
   /** Every platform copy, highest-priority platform first. */
   sources: Assignment[];
+  /** Other names the course goes by, e.g. ME 106A for EECS 106A. */
+  alsoKnownAs?: { key: string; label: string }[];
 }

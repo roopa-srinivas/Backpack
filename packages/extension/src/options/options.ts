@@ -1,7 +1,10 @@
 import {
   assignCourseColors,
+  colorHex,
   EVENT_COLORS,
   isEarlierTerm,
+  isHexColor,
+  nearestEventColor,
   mergeAssignments,
   newestFirst,
   newestTerm,
@@ -9,8 +12,10 @@ import {
   type Term,
   type AssignmentKind,
   type EventColor,
+  type HexColor,
   type Settings,
   type Task,
+  textColorOn,
 } from "@backpack/core";
 import type { Reply, Request } from "../background.js";
 import { chromeStore } from "../state.js";
@@ -66,12 +71,16 @@ async function update(change: (settings: Settings) => Settings) {
   await render();
 }
 
-/** A row of Google Calendar's colors, with an optional "no color" choice first. */
+/**
+ * A row of Google Calendar's colors, with an optional "no color" choice
+ * first and, when `custom` is set, a color wheel for any color.
+ */
 function swatches(
-  current: EventColor | null | undefined,
+  current: EventColor | HexColor | null | undefined,
   noneLabel: string | null,
   name: string,
-  onPick: (color: EventColor | null) => void,
+  onPick: (color: EventColor | HexColor | null) => void,
+  custom = false,
 ): HTMLElement {
   const group = make("div", "swatches");
   group.setAttribute("role", "radiogroup");
@@ -93,13 +102,38 @@ function swatches(
   for (const [color, { name: colorName }] of Object.entries(EVENT_COLORS) as [EventColor, { name: string }][]) {
     option(color, colorName);
   }
+  if (custom) {
+    // Chrome's color picker: a color wheel, an eyedropper and hex input.
+    const wheel = make("label", "swatch custom");
+    const chosen = isHexColor(current);
+    wheel.setAttribute("role", "radio");
+    wheel.setAttribute("aria-checked", String(chosen));
+    wheel.title = chosen ? `Custom color ${current}` : "Pick any color";
+    if (chosen) wheel.style.background = current;
+    const input = make("input");
+    input.type = "color";
+    input.value = chosen ? current : "#e0a458";
+    input.setAttribute("aria-label", `${name}: pick any color`);
+    input.addEventListener("change", () => onPick(input.value.toLowerCase() as HexColor));
+    wheel.append(input);
+    group.append(wheel);
+  }
   return group;
 }
 
-function chip(text: string, color: EventColor | null | undefined): HTMLElement {
+/**
+ * Kinds of work and status color individual events, which can only use
+ * Google's 11 colors, so their pickers have no color wheel.
+ */
+const googleColor = (color: EventColor | HexColor | null): EventColor | undefined =>
+  color && !isHexColor(color) ? color : undefined;
+
+function chip(text: string, color: EventColor | HexColor | null | undefined): HTMLElement {
   const el = make("span", "chip", text);
-  if (color) el.style.background = EVENT_COLORS[color].hex;
-  else el.dataset.none = "true";
+  if (color) {
+    el.style.background = colorHex(color);
+    el.style.color = textColorOn(colorHex(color));
+  } else el.dataset.none = "true";
   return el;
 }
 
@@ -127,26 +161,77 @@ interface ListedCourse {
   key: string;
   label: string;
   term: Term | null;
+  /** Other names the class goes by (cross-listings, or classes the student merged in). */
+  alsoKnownAs: { key: string; label: string }[];
 }
 
 /** The classes on your calendar, from the last sync on this computer, with their newest term. */
 async function courseList(): Promise<ListedCourse[]> {
   const state = await chromeStore.load();
   const assignments = Object.values(state.cache).flatMap((c) => c.assignments);
-  const tasks = mergeAssignments(assignments, { courseAliases: state.settings.courseAliases });
-  const courses = new Map<string, { label: string; copies: Task["sources"] }>();
+  const tasks = mergeAssignments(assignments, {
+    courseAliases: state.settings.courseAliases,
+    courseMerges: state.settings.courseMerges,
+  });
+  const courses = new Map<string, { label: string; copies: Task["sources"]; alsoKnownAs: ListedCourse["alsoKnownAs"] }>();
   for (const task of tasks) {
-    const course = courses.get(task.courseKey) ?? { label: task.courseLabel, copies: [] };
+    const course = courses.get(task.courseKey) ?? { label: task.courseLabel, copies: [], alsoKnownAs: task.alsoKnownAs ?? [] };
     course.copies.push(...task.sources);
     courses.set(task.courseKey, course);
   }
   return [...courses]
-    .map(([key, { label, copies }]) => ({ key, label, term: newestTerm(copies.map((c) => c.course)) }))
+    .map(([key, { label, copies, alsoKnownAs }]) => ({ key, label, alsoKnownAs, term: newestTerm(copies.map((c) => c.course)) }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /** Earlier semesters' classes stay tucked away unless the student asks for them. */
 let showEarlier = false;
+
+/**
+ * "Also listed as ME 106A" for a class that goes by several names, or a
+ * "Same class as…" choice for merging it into another one by hand.
+ */
+function sameClassControls(
+  settings: Settings,
+  key: string,
+  label: string,
+  alsoKnownAs: ListedCourse["alsoKnownAs"],
+  others: ListedCourse[],
+): HTMLElement {
+  const row = make("div", "same-class muted hint");
+  if (alsoKnownAs.length) {
+    row.append(`Also listed as ${alsoKnownAs.map((a) => a.label).join(", ")}. `);
+    // Only merges the student made can be undone; cross-listings Backpack found stay together.
+    const keys = new Set([key, ...alsoKnownAs.map((a) => a.key)]);
+    const separate = (merges: Record<string, string>) =>
+      Object.fromEntries(Object.entries(merges).filter(([from, to]) => !keys.has(from) && !keys.has(to)));
+    if (Object.keys(separate(settings.courseMerges)).length !== Object.keys(settings.courseMerges).length) {
+      const split = make("button", "link", "Keep them separate");
+      split.type = "button";
+      split.addEventListener("click", () => update((s) => ({ ...s, courseMerges: separate(s.courseMerges) })));
+      row.append(split);
+    }
+    return row;
+  }
+  const choices = others.filter((o) => o.key !== key);
+  if (!choices.length) return row;
+  const select = make("select");
+  select.setAttribute("aria-label", `${label} is the same class as`);
+  const own = make("option", "", "Its own class");
+  own.value = "";
+  select.append(own);
+  for (const other of choices) {
+    const option = make("option", "", `Same class as ${other.label}`);
+    option.value = other.key;
+    select.append(option);
+  }
+  select.addEventListener("change", () => {
+    if (!select.value) return;
+    void update((s) => ({ ...s, courseMerges: { ...s.courseMerges, [key]: select.value } }));
+  });
+  row.append(select);
+  return row;
+}
 
 async function render() {
   const { settings } = await chromeStore.load();
@@ -169,7 +254,7 @@ async function render() {
   toggle.setAttribute("aria-expanded", String(showEarlier));
   $("earlier-wrap").hidden = !showEarlier || !earlier.length;
 
-  const courseRow = ({ key, label, term }: ListedCourse, isEarlier: boolean) => {
+  const courseRow = ({ key, label, term, alsoKnownAs }: ListedCourse, isEarlier: boolean, others: ListedCourse[]) => {
     const course = settings.courses[key] ?? {};
     const li = make("li");
     if (course.hidden) li.dataset.hidden = "true";
@@ -201,14 +286,31 @@ async function render() {
     top.append(hide);
     li.append(
       top,
-      swatches(course.color, "No color", `${label} color`, (color) =>
-        update((s) => ({ ...s, courses: { ...s.courses, [key]: { ...s.courses[key], color } } })),
+      swatches(
+        course.color,
+        "No color",
+        `${label} color`,
+        (color) => update((s) => ({ ...s, courses: { ...s.courses, [key]: { ...s.courses[key], color } } })),
+        true,
       ),
     );
+
+    // A custom color only shows exactly on the class's own calendar.
+    if (isHexColor(course.color) && settings.calendars !== "perCourse") {
+      const note = make("p", "muted hint note");
+      note.append(`Shows as ${EVENT_COLORS[nearestEventColor(course.color)].name} on a shared calendar. `);
+      const perCourse = make("button", "link", "Give each class its own calendar");
+      perCourse.type = "button";
+      perCourse.addEventListener("click", () => update((s) => ({ ...s, calendars: "perCourse" })));
+      note.append(perCourse, " for the exact color.");
+      li.append(note);
+    }
+
+    li.append(sameClassControls(settings, key, label, alsoKnownAs, others));
     return li;
   };
-  $("courses").replaceChildren(...courses.map((c) => courseRow(c, false)));
-  $("earlier-courses").replaceChildren(...earlier.map((c) => courseRow(c, true)));
+  $("courses").replaceChildren(...courses.map((c) => courseRow(c, false, courses)));
+  $("earlier-courses").replaceChildren(...earlier.map((c) => courseRow(c, true, earlier)));
 
   const general = reminderSelect(settings.reminders, null, (minutes) =>
     update((s) => ({ ...s, reminders: minutes ?? s.reminders })),
@@ -241,7 +343,7 @@ async function render() {
       top.append(make("span", "name", label), emojiInput, reminders);
       li.append(
         top,
-        swatches(current.color, "Class color", `${label} color`, (color) => setKind({ color: color ?? undefined })),
+        swatches(current.color, "Class color", `${label} color`, (color) => setKind({ color: googleColor(color) })),
       );
       return li;
     }),
@@ -250,12 +352,12 @@ async function render() {
   const status = settings.statusColors;
   $("submitted-color").replaceChildren(
     swatches(status.submitted, "Don't change", "Submitted work color", (color) =>
-      update((s) => ({ ...s, statusColors: { ...s.statusColors, submitted: color ?? undefined } })),
+      update((s) => ({ ...s, statusColors: { ...s.statusColors, submitted: googleColor(color) } })),
     ),
   );
   $("due-soon-color").replaceChildren(
     swatches(status.dueSoon, "Don't change", "Due soon color", (color) =>
-      update((s) => ({ ...s, statusColors: { ...s.statusColors, dueSoon: color ?? undefined } })),
+      update((s) => ({ ...s, statusColors: { ...s.statusColors, dueSoon: googleColor(color) } })),
     ),
   );
   const hours = $<HTMLSelectElement>("due-soon-hours");
