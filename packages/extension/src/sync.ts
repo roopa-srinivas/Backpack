@@ -81,6 +81,7 @@ export async function syncOnce(store: Store, sources: Source[], calendar: Calend
     const tasks = mergeAssignments(assignments, {
       priority: state.settings.platformPriority,
       courseAliases: state.settings.courseAliases,
+      courseMerges: state.settings.courseMerges,
     });
     // New courses get a color. Settings are read fresh, so a change made on
     // the settings page while this sync was reading isn't overwritten.

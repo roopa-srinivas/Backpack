@@ -162,26 +162,85 @@ interface ListedCourse {
   key: string;
   label: string;
   term: Term | null;
+  /** Other names the class goes by (cross-listings, or classes the student merged in). */
+  alsoKnownAs: { key: string; label: string }[];
 }
 
 /** The classes on your calendar, from the last sync on this computer, with their newest term. */
 async function courseList(): Promise<ListedCourse[]> {
   const state = await chromeStore.load();
   const assignments = Object.values(state.cache).flatMap((c) => c.assignments);
-  const tasks = mergeAssignments(assignments, { courseAliases: state.settings.courseAliases });
-  const courses = new Map<string, { label: string; copies: Task["sources"] }>();
+  const tasks = mergeAssignments(assignments, {
+    courseAliases: state.settings.courseAliases,
+    courseMerges: state.settings.courseMerges,
+  });
+  const courses = new Map<string, { label: string; copies: Task["sources"]; alsoKnownAs: ListedCourse["alsoKnownAs"] }>();
   for (const task of tasks) {
-    const course = courses.get(task.courseKey) ?? { label: task.courseLabel, copies: [] };
+    const course = courses.get(task.courseKey) ?? { label: task.courseLabel, copies: [], alsoKnownAs: task.alsoKnownAs ?? [] };
     course.copies.push(...task.sources);
     courses.set(task.courseKey, course);
   }
   return [...courses]
-    .map(([key, { label, copies }]) => ({ key, label, term: newestTerm(copies.map((c) => c.course)) }))
+    .map(([key, { label, copies, alsoKnownAs }]) => ({ key, label, alsoKnownAs, term: newestTerm(copies.map((c) => c.course)) }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /** Earlier semesters' classes stay tucked away unless the student asks for them. */
 let showEarlier = false;
+
+/**
+ * "Also listed as ME 106A" for a class that goes by several names, or a
+ * "Same class as…" choice for merging it into another one by hand.
+ */
+function sameClassControls(
+  settings: Settings,
+  key: string,
+  label: string,
+  alsoKnownAs: ListedCourse["alsoKnownAs"],
+  others: ListedCourse[],
+): HTMLElement {
+  const row = make("div", "same-class muted hint");
+  if (alsoKnownAs.length) {
+    // Only merges the student made can be undone; cross-listings Backpack found stay together.
+    const keys = new Set([key, ...alsoKnownAs.map((a) => a.key)]);
+    const separate = (merges: Record<string, string>) =>
+      Object.fromEntries(Object.entries(merges).filter(([from, to]) => !keys.has(from) && !keys.has(to)));
+    const mergedByHand = Object.keys(separate(settings.courseMerges)).length !== Object.keys(settings.courseMerges).length;
+    const names = alsoKnownAs.map((a) => a.label).join(", ");
+    row.append(`Also listed as ${names} (${mergedByHand ? "you merged these" : "matched by name across your sites"}). `);
+    if (mergedByHand) {
+      const split = make("button", "link", "Keep them separate");
+      split.type = "button";
+      split.addEventListener("click", () => update((s) => ({ ...s, courseMerges: separate(s.courseMerges) })));
+      row.append(split);
+    }
+    return row;
+  }
+  const choices = others.filter((o) => o.key !== key);
+  if (!choices.length) return row;
+  const select = make("select");
+  select.setAttribute("aria-label", `${label} is the same class as`);
+  const own = make("option", "", "Its own class");
+  own.value = "";
+  select.append(own);
+  for (const other of choices) {
+    const option = make("option", "", `Same class as ${other.label}`);
+    option.value = other.key;
+    select.append(option);
+  }
+  select.addEventListener("change", () => {
+    if (!select.value) return;
+    const other = choices.find((c) => c.key === select.value)!;
+    // Merging joins two classes' assignments, so make sure it's on purpose.
+    if (!confirm(`Treat ${label} and ${other.label} as the same class? Their assignments will be combined. You can undo this with "Keep them separate".`)) {
+      select.value = "";
+      return;
+    }
+    void update((s) => ({ ...s, courseMerges: { ...s.courseMerges, [key]: select.value } }));
+  });
+  row.append(select);
+  return row;
+}
 
 async function render() {
   const { settings } = await chromeStore.load();
@@ -204,7 +263,7 @@ async function render() {
   toggle.setAttribute("aria-expanded", String(showEarlier));
   $("earlier-wrap").hidden = !showEarlier || !earlier.length;
 
-  const courseRow = ({ key, label, term }: ListedCourse, isEarlier: boolean) => {
+  const courseRow = ({ key, label, term, alsoKnownAs }: ListedCourse, isEarlier: boolean, others: ListedCourse[]) => {
     const course = settings.courses[key] ?? {};
     const li = make("li");
     if (course.hidden) li.dataset.hidden = "true";
@@ -255,10 +314,12 @@ async function render() {
       note.append(perCourse, " for the exact color.");
       li.append(note);
     }
+
+    li.append(sameClassControls(settings, key, label, alsoKnownAs, others));
     return li;
   };
-  $("courses").replaceChildren(...courses.map((c) => courseRow(c, false)));
-  $("earlier-courses").replaceChildren(...earlier.map((c) => courseRow(c, true)));
+  $("courses").replaceChildren(...courses.map((c) => courseRow(c, false, courses)));
+  $("earlier-courses").replaceChildren(...earlier.map((c) => courseRow(c, true, earlier)));
 
   const general = reminderSelect(settings.reminders, null, (minutes) =>
     update((s) => ({ ...s, reminders: minutes ?? s.reminders })),
