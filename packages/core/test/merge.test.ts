@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { identifyCourse, mergeAssignments, normalizeTitle, titlesMatch } from "../src/index.js";
+import { courseCodes, identifyCourse, mergeAssignments, normalizeTitle, titlesMatch } from "../src/index.js";
 import { assignment } from "./helpers.js";
 
 describe("identifyCourse", () => {
@@ -212,5 +212,89 @@ describe("no repeated assignments", () => {
     expect(tasks).toHaveLength(3);
     expect(new Set(tasks.map((t) => t.key)).size).toBe(tasks.length);
     expect(tasks[0]!.sources.map((s) => s.platform)).toEqual(["gradescope", "prairielearn", "canvas", "canvas"]);
+  });
+});
+
+describe("classes with several names", () => {
+  const course = (platform: "canvas" | "gradescope" | "prairielearn", id: string, name: string, extra: object = {}) => ({
+    platform,
+    id,
+    name,
+    ...extra,
+  });
+  const hw = (platform: "canvas" | "gradescope" | "prairielearn", c: ReturnType<typeof course>, title = "HW 1", dueAt = "2026-09-12T06:59:00Z") =>
+    assignment(platform, { course: c as never, title, dueAt });
+
+  it("finds every code in a cross-listed name, skipping section labels", () => {
+    expect(courseCodes({ platform: "canvas", id: "1", name: "EECS C106A/MEC ENG C106A - LEC 001" })).toEqual([
+      { key: "eecs106a", label: "EECS 106A", number: "106a", crossListed: true },
+      { key: "me106a", label: "ME 106A", number: "106a", crossListed: true },
+    ]);
+    expect(courseCodes({ platform: "canvas", id: "2", name: "COMPSCI 61A - LEC 001", code: "COMPSCI 61A" })).toEqual([
+      { key: "cs61a", label: "CS 61A", number: "61a", crossListed: false },
+    ]);
+  });
+
+  it("treats a class listed under both its codes as one", () => {
+    const canvas = course("canvas", "2100", "EECS C106A/MEC ENG C106A - LEC 001");
+    const gradescope = course("gradescope", "880", "ME 106A");
+    const tasks = mergeAssignments([hw("canvas", canvas), hw("gradescope", gradescope, "Homework 1")]);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]).toMatchObject({ courseKey: "eecs106a", courseLabel: "EECS 106A", alsoKnownAs: [{ key: "me106a", label: "ME 106A" }] });
+  });
+
+  it("joins the same number when one site marks it cross-listed", () => {
+    const canvas = course("canvas", "2100", "EECS C106A - LEC 001");
+    const gradescope = course("gradescope", "880", "ME 106A");
+    const tasks = mergeAssignments([hw("canvas", canvas), hw("gradescope", gradescope)]);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.courseLabel).toBe("EECS 106A");
+  });
+
+  it("joins the same number when the course titles match", () => {
+    const gradescope = course("gradescope", "880", "ME 106A Introduction to Robotics");
+    const prairielearn = course("prairielearn", "77", "EECS 106A: Introduction to Robotics, Fall 2026");
+    const tasks = mergeAssignments([hw("gradescope", gradescope, "HW 2"), hw("prairielearn", prairielearn, "Quiz 4")]);
+    expect(new Set(tasks.map((t) => t.courseKey))).toEqual(new Set(["eecs106a"]));
+  });
+
+  it("never joins different classes that happen to share a number or homework schedule", () => {
+    const chem = course("canvas", "1", "CHEM 1A - LEC 001");
+    const math = course("gradescope", "2", "MATH 1A");
+    const fridays = ["2026-09-12T06:59:00Z", "2026-09-19T06:59:00Z", "2026-09-26T06:59:00Z"];
+    const tasks = mergeAssignments(
+      fridays.flatMap((due, i) => [hw("canvas", chem, `HW ${i + 1}`, due), hw("gradescope", math, `HW ${i + 1}`, due)]),
+    );
+    expect(new Set(tasks.map((t) => t.courseKey))).toEqual(new Set(["chem1a", "math1a"]));
+
+    const seminars = mergeAssignments([
+      hw("gradescope", course("gradescope", "3", "MATH 98 Seminar")),
+      hw("prairielearn", course("prairielearn", "4", "CS 98: Seminar, Fall 2026")),
+    ]);
+    expect(seminars).toHaveLength(2);
+  });
+
+  it("doesn't join cross-listings from different semesters", () => {
+    const fall = course("canvas", "2100", "EECS C106A - LEC 001", { term: "Fall 2026" });
+    const spring = course("gradescope", "880", "ME 106A", { term: "Spring 2026" });
+    expect(mergeAssignments([hw("canvas", fall), hw("gradescope", spring, "HW 9", "2026-03-01T07:59:00Z")])).toHaveLength(2);
+  });
+
+  it("joins classes the student said are the same, under the name they picked", () => {
+    const canvas = course("canvas", "2100", "EECS 106A - LEC 001");
+    const gradescope = course("gradescope", "880", "ME 106A");
+    const items = [hw("canvas", canvas), hw("gradescope", gradescope)];
+    expect(mergeAssignments(items)).toHaveLength(2);
+    const intoMe = mergeAssignments(items, { courseMerges: { eecs106a: "me106a" } });
+    expect(intoMe).toHaveLength(1);
+    expect(intoMe[0]).toMatchObject({ courseKey: "me106a", alsoKnownAs: [{ key: "eecs106a", label: "EECS 106A" }] });
+  });
+
+  it("picks the same name for a cross-listed class whichever site is read first", () => {
+    const canvas = course("canvas", "2100", "EECS C106A/MEC ENG C106A - LEC 001");
+    const gradescope = course("gradescope", "880", "ME C106A");
+    const [a, b] = [hw("canvas", canvas), hw("gradescope", gradescope)];
+    expect(mergeAssignments([a, b])[0]!.courseKey).toBe("eecs106a");
+    expect(mergeAssignments([b, a])[0]!.courseKey).toBe("eecs106a");
   });
 });

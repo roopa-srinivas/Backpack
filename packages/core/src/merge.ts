@@ -1,4 +1,5 @@
-import { identifyCourse, type CourseIdentity } from "./courses.js";
+import { courseCodes, courseTitleWords, identifyCourse, type CourseIdentity } from "./courses.js";
+import { courseTerm, type Term } from "./terms.js";
 import type { Assignment, Platform, Task } from "./types.js";
 
 /** Platforms students submit on come first: their titles and due dates win. */
@@ -103,14 +104,61 @@ function dropRepeats(assignments: Assignment[]): Assignment[] {
 /** Copies that share at least this many dated assignments are the same course. */
 const LINKING_MATCHES = 2;
 
+/** A course's identity, plus the other names it goes by once linked. */
+export interface LinkedCourse extends CourseIdentity {
+  alsoKnownAs: CourseIdentity[];
+}
+
+/** Disjoint sets over course keys. */
+class Groups {
+  private parent = new Map<string, string>();
+  find(key: string): string {
+    let root = key;
+    while (this.parent.has(root) && this.parent.get(root) !== root) root = this.parent.get(root)!;
+    this.parent.set(key, root);
+    return root;
+  }
+  join(a: string, b: string) {
+    const [ra, rb] = [this.find(a), this.find(b)];
+    if (ra !== rb) this.parent.set(ra, rb);
+  }
+}
+
+/** Title words too common to say two courses are the same. */
+const GENERIC_TITLE_WORDS = new Set([
+  "seminar", "topics", "special", "selected", "research", "independent", "study", "studies", "directed", "group",
+  "discussion", "lab", "laboratory", "section", "honors", "freshman", "sophomore", "colloquium", "workshop", "course",
+]);
+
+/** Whether two course titles name the same class: mostly the same words, and not just a generic one. */
+function titlesAgree(a: Set<string>, b: Set<string>): boolean {
+  const shared = [...a].filter((w) => b.has(w));
+  if (!shared.length || shared.length / (a.size + b.size - shared.length) < 0.6) return false;
+  return shared.length >= 2 || !GENERIC_TITLE_WORDS.has(shared[0]!);
+}
+
 /**
- * Works out each platform course's identity. Courses with no recognizable
- * code ("Robotics" on Gradescope) are linked to the course they share
- * assignments with, so their copies still merge. Two courses that both have
- * codes are never linked this way: CS 61A and CS 61B can both have a "HW 3"
- * due the same Friday.
+ * Works out which platform courses are the same class, and what to call it.
+ * Courses are the same class when:
+ *
+ * - they have the same code (COMPSCI 169A and CS 169A both read as CS 169A);
+ * - one name lists both codes, as cross-listed classes do ("EECS C106A/MEC
+ *   ENG C106A");
+ * - they have the same number in the same term and one is marked as
+ *   cross-listed (EECS C106A and ME 106A), or their titles match
+ *   ("Introduction to Robotics");
+ * - one has no code at all ("Robotics" on Gradescope) and it shares
+ *   assignments with exactly one course;
+ * - the student said so (`merges`).
+ *
+ * Matching homework alone never joins two courses with codes: CHEM 1A and
+ * MATH 1A can both have an "HW 1" due every Friday.
  */
-function courseIdentities(assignments: Assignment[], aliases: Record<string, string>): Map<string, CourseIdentity> {
+function courseIdentities(
+  assignments: Assignment[],
+  aliases: Record<string, string>,
+  merges: Record<string, string>,
+): Map<string, LinkedCourse> {
   const identities = new Map<string, CourseIdentity>();
   const byCourse = new Map<string, Assignment[]>();
   for (const a of assignments) {
@@ -120,8 +168,49 @@ function courseIdentities(assignments: Assignment[], aliases: Record<string, str
   }
   // identifyCourse falls back to "platform:id" when it finds no code.
   const unknown = (identity: CourseIdentity) => identity.key.includes(":");
+  const groups = new Groups();
+  const labels = new Map<string, string>();
+  for (const identity of identities.values()) labels.set(identity.key, identity.label);
 
-  const linked = new Map(identities);
+  // What each course key is known by, across all its platform courses.
+  interface KeyInfo {
+    number: string | null;
+    crossListed: boolean;
+    title: Set<string>;
+    term: Term | null;
+  }
+  const info = new Map<string, KeyInfo>();
+  for (const [course, identity] of identities) {
+    const sample = byCourse.get(course)![0]!.course;
+    const pinned = Boolean(aliases[`${sample.platform}:${sample.id}`]);
+    const codes = pinned ? [] : courseCodes(sample);
+    // Every code in one name is the same class.
+    for (const code of codes) {
+      if (!labels.has(code.key)) labels.set(code.key, code.label);
+      groups.join(code.key, identity.key);
+    }
+    const mine = codes.find((c) => c.key === identity.key);
+    const known = info.get(identity.key);
+    const term = courseTerm(sample);
+    info.set(identity.key, {
+      number: mine?.number ?? known?.number ?? null,
+      crossListed: Boolean(known?.crossListed) || codes.some((c) => c.crossListed),
+      title: new Set([...(known?.title ?? []), ...courseTitleWords(sample)]),
+      term: known?.term ?? term,
+    });
+  }
+
+  // Same number, different department: cross-listed, or the same title.
+  const keyed = [...info].filter(([, i]) => i.number);
+  for (const [i, [keyA, a]] of keyed.entries()) {
+    for (const [keyB, b] of keyed.slice(i + 1)) {
+      if (keyA === keyB || a.number !== b.number) continue;
+      if (a.term && b.term && (a.term.season !== b.term.season || a.term.year !== b.term.year)) continue;
+      if (a.crossListed || b.crossListed || titlesAgree(a.title, b.title)) groups.join(keyA, keyB);
+    }
+  }
+
+  // Courses with no code go with the one course they share assignments with.
   for (const [course, identity] of identities) {
     if (!unknown(identity)) continue;
     const mine = byCourse.get(course)!.filter((a) => a.dueAt);
@@ -135,16 +224,45 @@ function courseIdentities(assignments: Assignment[], aliases: Record<string, str
       counts.set(otherIdentity.key, (counts.get(otherIdentity.key) ?? 0) + shared);
     }
     const [best, runnerUp] = [...counts].sort((x, y) => y[1] - x[1]);
-    if (best && best[1] >= LINKING_MATCHES && (!runnerUp || best[1] > runnerUp[1])) {
-      linked.set(course, [...identities.values()].find((i) => i.key === best[0])!);
-    }
+    if (best && best[1] >= LINKING_MATCHES && (!runnerUp || best[1] > runnerUp[1])) groups.join(identity.key, best[0]);
   }
+
+  for (const [from, to] of Object.entries(merges)) {
+    if (!labels.has(to)) continue;
+    groups.join(from, to);
+  }
+
+  // One name per class, picked the same way every time so the class keeps
+  // its color and calendar: the one the student merged into, then a real
+  // code over a fallback, then alphabetical.
+  const targets = new Set(Object.values(merges));
+  const present = new Set([...identities.values()].map((i) => i.key));
+  const members = new Map<string, string[]>();
+  for (const key of present) {
+    const root = groups.find(key);
+    members.set(root, [...(members.get(root) ?? []), key]);
+  }
+  const named = new Map<string, LinkedCourse>();
+  for (const keys of members.values()) {
+    const [chosen] = [...keys].sort(
+      (a, b) =>
+        Number(targets.has(b)) - Number(targets.has(a)) || Number(a.includes(":")) - Number(b.includes(":")) || a.localeCompare(b),
+    );
+    const alsoKnownAs = keys.filter((k) => k !== chosen).sort().map((k) => ({ key: k, label: labels.get(k)! }));
+    const linked = { key: chosen!, label: labels.get(chosen!)!, alsoKnownAs };
+    for (const key of keys) named.set(key, linked);
+  }
+
+  const linked = new Map<string, LinkedCourse>();
+  for (const [course, identity] of identities) linked.set(course, named.get(identity.key)!);
   return linked;
 }
 
 export interface MergeOptions {
   priority?: Platform[];
   courseAliases?: Record<string, string>;
+  /** Courses the student said are the same class, by course key: {"me106a": "eecs106a"}. */
+  courseMerges?: Record<string, string>;
 }
 
 /**
@@ -165,13 +283,13 @@ export function mergeAssignments(assignments: Assignment[], options: MergeOption
     return i === -1 ? priority.length : i;
   };
   const unique = dropRepeats(assignments);
-  const courses = courseIdentities(unique, options.courseAliases ?? {});
+  const courses = courseIdentities(unique, options.courseAliases ?? {}, options.courseMerges ?? {});
   // Highest-priority platforms first, so they seed each group.
   const sorted = [...unique].sort(
     (a, b) => rank(a.platform) - rank(b.platform) || a.platform.localeCompare(b.platform) || a.id.localeCompare(b.id),
   );
 
-  const groups: { courseKey: string; courseLabel: string; items: Assignment[] }[] = [];
+  const groups: { course: LinkedCourse; courseKey: string; courseLabel: string; items: Assignment[] }[] = [];
   for (const assignment of sorted) {
     const course = courses.get(platformCourse(assignment))!;
     const group = groups.find(
@@ -181,10 +299,10 @@ export function mergeAssignments(assignments: Assignment[], options: MergeOption
         sameWork(g.items[0]!, assignment),
     );
     if (group) group.items.push(assignment);
-    else groups.push({ courseKey: course.key, courseLabel: course.label, items: [assignment] });
+    else groups.push({ course, courseKey: course.key, courseLabel: course.label, items: [assignment] });
   }
 
-  return groups.map(({ courseKey, courseLabel, items }) => {
+  return groups.map(({ course, courseKey, courseLabel, items }) => {
     const lead = items[0]!;
     return {
       // Keyed by the lead copy: a Canvas copy appearing or vanishing leaves the key alone.
@@ -197,6 +315,7 @@ export function mergeAssignments(assignments: Assignment[], options: MergeOption
       kind: lead.kind,
       points: items.find((i) => i.points != null)?.points ?? null,
       sources: items,
+      ...(course.alsoKnownAs.length ? { alsoKnownAs: course.alsoKnownAs } : {}),
     };
   });
 }

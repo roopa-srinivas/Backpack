@@ -182,6 +182,25 @@ describe("syncOnce", () => {
     expect(google.calls.filter((c) => c.startsWith("setCalendarColor"))).toEqual([]);
   });
 
+  it("puts a cross-listed class on one calendar, however each site names it", async () => {
+    const s = store();
+    await s.save({ settings: { ...s.state.settings, calendars: "perCourse" } });
+    const google = new FakeCalendar();
+    const gradescope: Source = {
+      platform: "gradescope",
+      fetch: async () => [
+        {
+          ...canvasAssignment("5", "Lab 4: Kinematics", "2026-10-22T06:59:00Z"),
+          platform: "gradescope",
+          course: { platform: "gradescope", id: "880", name: "ME C106A" },
+        },
+      ],
+    };
+    await syncOnce(s, [canvas, gradescope], google, NOW);
+    expect([...google.calendars.values()].map((c) => c.name).sort()).toEqual(["Backpack · CS 169A", "Backpack · EECS 106A"]);
+    expect(google.summaries()).toHaveLength(2);
+  });
+
   it("doesn't spend a color on a class from an earlier semester", async () => {
     const s = store();
     const google = new FakeCalendar();

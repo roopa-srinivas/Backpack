@@ -109,6 +109,8 @@ export interface Settings {
   statusColors: StatusColors;
   /** Pins a platform course ("canvas:1234") to a course label when names don't line up. */
   courseAliases: Record<string, string>;
+  /** Courses the student said are the same class, by course key: {"me106a": "eecs106a"}. */
+  courseMerges: Record<string, string>;
   platformPriority: Platform[];
 }
 
@@ -125,6 +127,7 @@ export function defaultSettings(timeZone = Intl.DateTimeFormat().resolvedOptions
     kinds: {},
     statusColors: { dueSoonHours: 24 },
     courseAliases: {},
+    courseMerges: {},
     platformPriority: [...DEFAULT_PLATFORM_PRIORITY],
   };
 }
