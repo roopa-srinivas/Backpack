@@ -147,6 +147,8 @@ function titlesAgree(a: Set<string>, b: Set<string>): boolean {
  * - they have the same number in the same term and one is marked as
  *   cross-listed (EECS C106A and ME 106A), or their titles match
  *   ("Introduction to Robotics");
+ * - one is the other's number without its letter, in the same department
+ *   and term (CS 169 and CS 169A), and no other lettered version is around;
  * - one has no code at all ("Robotics" on Gradescope) and it shares
  *   assignments with exactly one course;
  * - the student said so (`merges`).
@@ -200,14 +202,33 @@ function courseIdentities(
     });
   }
 
-  // Same number, different department: cross-listed, or the same title.
   const keyed = [...info].filter(([, i]) => i.number);
+  const sameTerm = (a: KeyInfo, b: KeyInfo) =>
+    !a.term || !b.term || (a.term.season === b.term.season && a.term.year === b.term.year);
+  const department = (key: string, number: string) => key.slice(0, key.length - number.length);
+
+  // Same number, different department: cross-listed, or the same title.
   for (const [i, [keyA, a]] of keyed.entries()) {
     for (const [keyB, b] of keyed.slice(i + 1)) {
-      if (keyA === keyB || a.number !== b.number) continue;
-      if (a.term && b.term && (a.term.season !== b.term.season || a.term.year !== b.term.year)) continue;
+      if (keyA === keyB || a.number !== b.number || !sameTerm(a, b)) continue;
       if (a.crossListed || b.crossListed || titlesAgree(a.title, b.title)) groups.join(keyA, keyB);
     }
+  }
+
+  // A number with and without its letter, in one department: CS 169 on one
+  // site, CS 169A on another. Not when several lettered versions are around
+  // (169A and 169L), and never between letters (MATH 1A and MATH 1B).
+  for (const [bareKey, bare] of keyed) {
+    if (!/^\d+$/.test(bare.number!)) continue;
+    const dept = department(bareKey, bare.number!);
+    const lettered = keyed.filter(
+      ([key, other]) =>
+        key !== bareKey &&
+        department(key, other.number!) === dept &&
+        new RegExp(`^${bare.number}[a-z]$`).test(other.number!) &&
+        sameTerm(bare, other),
+    );
+    if (lettered.length === 1) groups.join(bareKey, lettered[0]![0]);
   }
 
   // Courses with no code go with the one course they share assignments with.
@@ -234,7 +255,8 @@ function courseIdentities(
 
   // One name per class, picked the same way every time so the class keeps
   // its color and calendar: the one the student merged into, then a real
-  // code over a fallback, then alphabetical.
+  // code over a fallback, then the lettered number over the bare one (CS
+  // 169A over CS 169), then alphabetical.
   const targets = new Set(Object.values(merges));
   const present = new Set([...identities.values()].map((i) => i.key));
   const members = new Map<string, string[]>();
@@ -244,9 +266,13 @@ function courseIdentities(
   }
   const named = new Map<string, LinkedCourse>();
   for (const keys of members.values()) {
+    const bare = (key: string) => keys.some((k) => k.length === key.length + 1 && k.startsWith(key) && /\d[a-z]$/.test(k));
     const [chosen] = [...keys].sort(
       (a, b) =>
-        Number(targets.has(b)) - Number(targets.has(a)) || Number(a.includes(":")) - Number(b.includes(":")) || a.localeCompare(b),
+        Number(targets.has(b)) - Number(targets.has(a)) ||
+        Number(a.includes(":")) - Number(b.includes(":")) ||
+        Number(bare(a)) - Number(bare(b)) ||
+        a.localeCompare(b),
     );
     const alsoKnownAs = keys.filter((k) => k !== chosen).sort().map((k) => ({ key: k, label: labels.get(k)! }));
     const linked = { key: chosen!, label: labels.get(chosen!)!, alsoKnownAs };

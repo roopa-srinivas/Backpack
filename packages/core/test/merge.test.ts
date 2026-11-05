@@ -280,6 +280,35 @@ describe("classes with several names", () => {
     expect(mergeAssignments([hw("canvas", fall), hw("gradescope", spring, "HW 9", "2026-03-01T07:59:00Z")])).toHaveLength(2);
   });
 
+  it("joins a number with and without its letter, but nothing else", () => {
+    const fall = { term: "Fall 2026" };
+    const tasks = mergeAssignments([
+      hw("canvas", course("canvas", "1", "COMPSCI 169A - LEC 001", { code: "COMPSCI 169A", ...fall })),
+      hw("gradescope", course("gradescope", "2", "Software Engineering", { code: "CS 169", ...fall }), "HW 1"),
+      hw("canvas", course("canvas", "3", "COMPSCI 160 - LEC 001", { code: "COMPSCI 160", ...fall }), "HW 1"),
+      hw("gradescope", course("gradescope", "4", "User Interface Design", { code: "CS 160", ...fall }), "HW 1"),
+    ]);
+    expect(tasks.map((t) => [t.courseLabel, t.sources.length]).sort()).toEqual([
+      ["CS 160", 2],
+      ["CS 169A", 2],
+    ]);
+
+    // MATH 1A and MATH 1B are different classes.
+    const math = mergeAssignments([
+      hw("canvas", course("canvas", "5", "MATH 1A - LEC 001")),
+      hw("gradescope", course("gradescope", "6", "MATH 1B")),
+    ]);
+    expect(math).toHaveLength(2);
+
+    // With two lettered versions around, the bare number could be either.
+    const both = mergeAssignments([
+      hw("canvas", course("canvas", "7", "COMPSCI 194A - LEC 001")),
+      hw("canvas", course("canvas", "8", "COMPSCI 194B - LEC 001"), "HW 9"),
+      hw("gradescope", course("gradescope", "9", "CS 194"), "HW 5"),
+    ]);
+    expect(new Set(both.map((t) => t.courseKey))).toEqual(new Set(["cs194a", "cs194b", "cs194"]));
+  });
+
   it("joins classes the student said are the same, under the name they picked", () => {
     const canvas = course("canvas", "2100", "EECS 106A - LEC 001");
     const gradescope = course("gradescope", "880", "ME 106A");

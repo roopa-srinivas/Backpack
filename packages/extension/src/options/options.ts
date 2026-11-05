@@ -228,6 +228,12 @@ function sameClassControls(
   }
   select.addEventListener("change", () => {
     if (!select.value) return;
+    const other = choices.find((c) => c.key === select.value)!;
+    // Merging joins two classes' assignments, so make sure it's on purpose.
+    if (!confirm(`Treat ${label} and ${other.label} as the same class? Their assignments will be combined. You can undo this with "Keep them separate".`)) {
+      select.value = "";
+      return;
+    }
     void update((s) => ({ ...s, courseMerges: { ...s.courseMerges, [key]: select.value } }));
   });
   row.append(select);
