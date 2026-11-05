@@ -72,7 +72,7 @@
     <label for="calendars">Calendars</label>
     <select id="calendars">
       <option value="single">One "Backpack" calendar</option>
-      <option value="perCourse">One per course</option>
+      <option value="perCourse">One per class, each in its color</option>
       <option value="perPlatform">One per platform</option>
     </select>
   </div>
@@ -95,6 +95,7 @@
   <div class="field">
     <label for="title-template">Event title</label>
     <input id="title-template" type="text" spellcheck="false" />
+    <label class="check title-course"><input type="checkbox" id="title-course" /><span>Class name in event titles</span></label>
     <p class="muted hint">Use {course}, {title}, {platform}, {kind} and {points}.</p>
   </div>
   <button id="personalize" type="button">Colors, reminders and emoji…</button>

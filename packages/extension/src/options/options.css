@@ -24,4 +24,8 @@ li[data-hidden] .chip, li[data-hidden] .swatches { opacity: 0.4; }
 .rows .term { font-size: 0.75rem; color: var(--ink2); white-space: nowrap; }
 .subhead { font-size: 0.75rem; font-weight: 700; color: var(--ink2); margin: 0.8rem 0 0.6rem; }
 #toggle-earlier { margin-bottom: 0.4rem; }
+.swatch.custom { position: relative; overflow: hidden; cursor: pointer; background: conic-gradient(#e53935, #fdd835, #43a047, #1e88e5, #8e24aa, #e53935); }
+.swatch.custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.swatch.custom:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rows .note { margin: 0; }
 .field .label select { width: auto; display: inline-block; padding: 0.15rem 0.3rem; }

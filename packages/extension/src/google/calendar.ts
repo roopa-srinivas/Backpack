@@ -1,4 +1,4 @@
-import type { CalendarEventBody } from "@backpack/core";
+import { textColorOn, type CalendarEventBody } from "@backpack/core";
 
 const API = "https://www.googleapis.com/calendar/v3";
 
@@ -74,6 +74,17 @@ export class CalendarClient {
       if (error instanceof GoogleError && (error.status === 404 || error.status === 410)) return false;
       throw error;
     }
+  }
+
+  /**
+   * Sets the calendar's color to any color. Calendar colors live in the
+   * student's calendar list, not on the calendar itself.
+   */
+  async setCalendarColor(id: string, backgroundColor: string): Promise<void> {
+    await this.request("PATCH", `/users/me/calendarList/${encodeURIComponent(id)}?colorRgbFormat=true`, {
+      backgroundColor,
+      foregroundColor: textColorOn(backgroundColor),
+    });
   }
 
   async renameCalendar(id: string, summary: string): Promise<void> {
