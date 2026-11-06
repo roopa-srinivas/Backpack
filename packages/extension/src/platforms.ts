@@ -8,8 +8,6 @@ import type { State } from "./state.js";
 export interface PlatformInfo {
   platform: Platform;
   label: string;
-  /** False for platforms Backpack can't read yet; they show as "Coming soon". */
-  available: boolean;
   /** Sites Backpack needs permission to read, or null when setup isn't finished. */
   origins(state: State): string[] | null;
 }
@@ -23,25 +21,21 @@ export const PLATFORMS: PlatformInfo[] = [
   {
     platform: "canvas",
     label: "bCourses (Canvas)",
-    available: true,
     origins: (state) => (state.canvasHost ? [`https://${state.canvasHost}/*`] : null),
   },
   {
     platform: "gradescope",
     label: "Gradescope",
-    available: true,
     origins: () => ["https://www.gradescope.com/*"],
   },
   {
     platform: "prairielearn",
     label: "PrairieLearn",
-    available: true,
     origins: (state) => [`https://${prairielearnHost(state)}/*`],
   },
   {
     platform: "flextensions",
     label: "Flextensions",
-    available: true,
     origins: () => ["https://flextensions.berkeley.edu/*"],
   },
 ];
