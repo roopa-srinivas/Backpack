@@ -46,6 +46,7 @@ const REMINDERS: { label: string; minutes: number[] }[] = [
 ];
 
 const DUE_SOON_HOURS = [6, 12, 24, 48, 72];
+const DUE_REMINDER_HOURS = [3, 12, 24, 48, 168];
 
 function send(request: Request): Promise<Reply> {
   return chrome.runtime.sendMessage(request);
@@ -369,6 +370,15 @@ async function render() {
       update((s) => ({ ...s, statusColors: { ...s.statusColors, dueSoon: googleColor(color) } })),
     ),
   );
+  const again = $<HTMLSelectElement>("due-reminder-hours");
+  again.replaceChildren(
+    ...DUE_REMINDER_HOURS.map((h) => {
+      const el = make("option", "", h < 24 ? `${h} hours` : h === 168 ? "1 week" : `${h / 24} day${h === 24 ? "" : "s"}`);
+      el.value = String(h);
+      el.selected = h === settings.dueReminderHours;
+      return el;
+    }),
+  );
   const hours = $<HTMLSelectElement>("due-soon-hours");
   hours.replaceChildren(
     ...DUE_SOON_HOURS.map((h) => {
@@ -383,6 +393,11 @@ async function render() {
 $("toggle-earlier").addEventListener("click", () => {
   showEarlier = !showEarlier;
   void render();
+});
+
+$("due-reminder-hours").addEventListener("change", (e) => {
+  const dueReminderHours = Number((e.target as HTMLSelectElement).value);
+  void update((s) => ({ ...s, dueReminderHours }));
 });
 
 $("due-soon-hours").addEventListener("change", (e) => {

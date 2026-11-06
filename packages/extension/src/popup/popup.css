@@ -77,3 +77,5 @@ footer { padding: 0.8rem 1rem; display: grid; gap: 0.6rem; }
 button.link { border: none; background: none; padding: 0; color: var(--ink2); text-decoration: underline; font-size: 0.75rem; justify-self: start; }
 .title-course { font-size: 0.78rem; color: var(--ink2); margin-top: 0.15rem; }
 [hidden] { display: none !important; }
+.due-row { display: flex; align-items: center; gap: 0.5rem; }
+.due-row p { flex: 1; }

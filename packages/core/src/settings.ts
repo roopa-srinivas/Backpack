@@ -112,6 +112,8 @@ export interface Settings {
   /** Courses the student said are the same class, by course key: {"me106a": "eecs106a"}. */
   courseMerges: Record<string, string>;
   platformPriority: Platform[];
+  /** When sites disagree on a deadline and you pick "Not now", ask again after this many hours. */
+  dueReminderHours: number;
 }
 
 export function defaultSettings(timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone): Settings {
@@ -129,6 +131,7 @@ export function defaultSettings(timeZone = Intl.DateTimeFormat().resolvedOptions
     courseAliases: {},
     courseMerges: {},
     platformPriority: [...DEFAULT_PLATFORM_PRIORITY],
+    dueReminderHours: 24,
   };
 }
 

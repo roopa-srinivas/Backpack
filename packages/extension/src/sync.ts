@@ -1,11 +1,13 @@
 import {
   assignCourseColors,
   buildEvents,
+  dueReminders,
   isEarlierTerm,
   mergeAssignments,
   newestTerm,
   planSync,
   PLATFORM_NAMES,
+  resolveDueDates,
   type Assignment,
   type ExistingEvent,
   type Platform,
@@ -114,7 +116,11 @@ export async function syncOnce(store: Store, sources: Source[], calendar: Calend
     const colored = assignCourseColors(latestSettings, current.map((t) => t.courseKey));
     if (colored) await store.save({ settings: colored });
     const settings = colored ?? latestSettings;
-    const desired = buildEvents(tasks, settings, now);
+    // Where sites disagree on a deadline, the calendar keeps its date until
+    // you choose. Answers are read fresh too, in case you just gave one.
+    const due = resolveDueDates(tasks, (await store.load()).dueQuestions, state.lastDue, settings, now);
+    await store.save({ dueQuestions: due.questions });
+    const desired = buildEvents(due.tasks, settings, now);
 
     // The calendar list is shared with your other computers; one may have
     // added a calendar while this one was reading.
@@ -202,8 +208,11 @@ export async function syncOnce(store: Store, sources: Source[], calendar: Calend
       removed: plan.remove.length,
       unchanged: plan.unchanged,
       tasks: desired.length,
+      newQuestions: due.fresh,
+      dueReminders: dueReminders(due.questions, now),
     };
-    await store.save({ calendars, calendarsMadeHere: madeHere, lastSync: result, errors });
+    const lastDue = Object.fromEntries(due.tasks.map((t) => [t.key, t.dueAt]));
+    await store.save({ calendars, calendarsMadeHere: madeHere, lastSync: result, errors, lastDue });
     return result;
   } catch (error) {
     errors.google = message(error);

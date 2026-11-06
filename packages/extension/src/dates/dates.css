@@ -1,0 +1,26 @@
+/* The due-date window: the menu's look, a little wider. */
+body { width: auto; min-width: 320px; }
+.intro { padding: 0.7rem 1rem 0; }
+#questions { display: grid; }
+.question { padding: 0.8rem 1rem; border-bottom: 1px solid var(--border); display: grid; gap: 0.55rem; }
+.question h2 { font-size: 0.95rem; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--ink); margin: 0; }
+.question .note { font-size: 0.78rem; color: var(--ink2); }
+.question .note.reminder { color: var(--accent); }
+.choices { border: none; display: grid; gap: 0.35rem; }
+.choices legend { font-size: 0.78rem; color: var(--ink2); margin-bottom: 0.25rem; }
+.choice { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.55rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; }
+.choice:has(input:checked) { border-color: var(--accent); }
+.choice input[type="radio"] { width: auto; margin: 0; accent-color: var(--accent); }
+.choice .when { flex: 1; font-weight: 600; }
+.choice .where { font-size: 0.75rem; color: var(--ink2); }
+.choice input[type="datetime-local"] { flex: 1; padding: 0.2rem 0.4rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.actions button { flex: 1 1 auto; }
+.picker { display: grid; gap: 0.35rem; padding: 0.55rem; border-left: 2px solid var(--border); }
+.picker label { font-size: 0.78rem; color: var(--ink2); }
+.picker .row button { flex: none; }
+.error { color: var(--error); font-size: 0.78rem; }
+.error:empty { display: none; }
+.answered { color: var(--ok); font-size: 0.85rem; }
+.answered.muted { color: var(--ink2); }
+footer .all-set { color: var(--ok); font-weight: 600; }

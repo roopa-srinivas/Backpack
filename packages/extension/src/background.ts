@@ -1,4 +1,5 @@
 import type { Assignment, Platform } from "@backpack/core";
+import { askAboutDueDates, calendarOpened, dueWindowClosed, showDueDates } from "./dueWindow.js";
 import { chromeTokenSource } from "./google/auth.js";
 import { CalendarClient } from "./google/calendar.js";
 import { platformInfo, prairielearnHost } from "./platforms.js";
@@ -14,7 +15,7 @@ import { showWebsiteBadge } from "./websites.js";
 const ALARM = "sync";
 const SYNC_EVERY_MINUTES = 180;
 
-export type Request = { type: "sync" } | { type: "connectGoogle" } | { type: "findWebsites" };
+export type Request = { type: "sync" } | { type: "connectGoogle" } | { type: "findWebsites" } | { type: "reviewDueDates" };
 export type Reply = { ok: true } | { ok: false; error: string };
 
 const READERS: Partial<Record<Platform, (state: State) => Promise<Assignment[]>>> = {
@@ -79,6 +80,7 @@ function sync(interactive: boolean): Promise<void> {
       await syncOnce(chromeStore, await sourcesFor(state), calendar);
     } finally {
       running = null;
+      await askAboutDueDates(interactive).catch(() => {});
       // A failed calendar sync shouldn't stop Backpack from finding course websites.
       await findWebsites(false).catch(() => {});
     }
@@ -101,9 +103,18 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM) sync(false).catch(() => {});
 });
 
+chrome.windows.onRemoved.addListener((id) => void dueWindowClosed(id));
+
+// Only fires with a URL for Google Calendar once you've let Backpack see it (from "Remind me later").
+chrome.tabs.onUpdated.addListener((_tabId, change, tab) => {
+  if (change.status === "complete" && tab.url?.startsWith("https://calendar.google.com/")) void calendarOpened();
+});
+
 chrome.runtime.onMessage.addListener((request: Request, _sender, reply: (r: Reply) => void) => {
   const work =
-    request.type === "connectGoogle"
+    request.type === "reviewDueDates"
+      ? showDueDates(null)
+      : request.type === "connectGoogle"
       ? chrome.identity.getAuthToken({ interactive: true }).then(() => undefined)
       : request.type === "findWebsites"
         ? findWebsites(true)
