@@ -51,6 +51,13 @@ export interface Assignment {
    * new deadline and `originalDueAt` the old one.
    */
   extension?: { status: "approved" | "pending"; originalDueAt: string | null };
+  /**
+   * Deadlines this copy showed on earlier reads, oldest first. Copies that
+   * agreed before still match after one site moves the date.
+   */
+  earlierDueDates?: string[];
+  /** When Backpack saw this copy's deadline move (ms since 1970). */
+  dueMovedAt?: number;
 }
 
 /**

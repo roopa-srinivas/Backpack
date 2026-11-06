@@ -414,3 +414,136 @@ describe("keepKnownDueDates", () => {
     ]);
   });
 });
+
+describe("when a due date moves", () => {
+  const HW3_FRI = "2026-10-24T06:59:00Z";
+  const HW3_MON = "2026-10-27T06:59:00Z";
+  const HW3_WED = "2026-10-29T06:59:00Z";
+  let gradescopeDue: string | null;
+  let canvasDue: string | null;
+  const gradescope: Source = {
+    platform: "gradescope",
+    fetch: async () => [
+      {
+        platform: "gradescope",
+        id: "5001",
+        course: { platform: "gradescope", id: "880", name: "Software Engineering", code: "CS 169A" },
+        title: "Homework 3",
+        url: "https://www.gradescope.com/courses/880/assignments/5001",
+        dueAt: gradescopeDue,
+        submitted: false,
+        kind: "assignment",
+        points: 10,
+      },
+    ],
+  };
+  const canvasOnly: Source = { platform: "canvas", fetch: async () => [canvasAssignment("1", "HW 3", canvasDue)] };
+
+  /** Every Backpack event as [title, end time], plus the event ids, to check it's the same event. */
+  const events = (google: FakeCalendar) =>
+    [...google.calendars.values()].flatMap((c) =>
+      [...c.events].map(([id, e]) => ("foreign" in e ? [id] : [id, e.summary, "dateTime" in e.end ? e.end.dateTime : ""])),
+    );
+
+  beforeEach(() => {
+    gradescopeDue = HW3_FRI;
+    canvasDue = HW3_FRI;
+  });
+
+  it("moves the event when the site you turn it in on moves the date and bCourses hasn't yet", async () => {
+    const s = store();
+    const google = new FakeCalendar();
+    await syncOnce(s, [canvasOnly, gradescope], google, NOW);
+    const eventId = events(google)[0]![0];
+
+    gradescopeDue = HW3_MON;
+    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW + 1000)).toMatchObject({ created: 0, updated: 1, removed: 0 });
+    expect(events(google)).toEqual([[eventId, "CS 169A · Homework 3", "2026-10-27T06:59:00.000Z"]]);
+
+    // Still one event on later syncs, while bCourses keeps the old date and once it catches up.
+    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW + 2000)).toMatchObject({ created: 0, updated: 0, removed: 0 });
+    canvasDue = HW3_MON;
+    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW + 3000)).toMatchObject({ created: 0, updated: 0, removed: 0 });
+    expect(events(google)).toEqual([[eventId, "CS 169A · Homework 3", "2026-10-27T06:59:00.000Z"]]);
+  });
+
+  it("moves the event when bCourses moves the date and Gradescope hasn't yet", async () => {
+    const s = store();
+    const google = new FakeCalendar();
+    await syncOnce(s, [canvasOnly, gradescope], google, NOW);
+    const eventId = events(google)[0]![0];
+
+    canvasDue = HW3_MON;
+    expect(await syncOnce(s, [canvasOnly, gradescope], google, NOW + 1000)).toMatchObject({ created: 0, updated: 1, removed: 0 });
+    expect(events(google)).toEqual([[eventId, "CS 169A · Homework 3", "2026-10-27T06:59:00.000Z"]]);
+  });
+
+  it("follows whichever site moved the date most recently", async () => {
+    const s = store();
+    const google = new FakeCalendar();
+    await syncOnce(s, [canvasOnly, gradescope], google, NOW);
+    canvasDue = HW3_MON;
+    await syncOnce(s, [canvasOnly, gradescope], google, NOW + 1000);
+    gradescopeDue = HW3_WED;
+    await syncOnce(s, [canvasOnly, gradescope], google, NOW + 2000);
+    expect(events(google).map((e) => e[2])).toEqual(["2026-10-29T06:59:00.000Z"]);
+    // Moved back on bCourses: that's the newest word now.
+    canvasDue = HW3_FRI;
+    await syncOnce(s, [canvasOnly, gradescope], google, NOW + 3000);
+    expect(events(google).map((e) => e[2])).toEqual(["2026-10-24T06:59:00.000Z"]);
+  });
+
+  it("moves the event when an extension is approved on Flextensions", async () => {
+    const s = store();
+    const google = new FakeCalendar();
+    let extension: Assignment["extension"] = { status: "pending", originalDueAt: null };
+    const flextensions: Source = {
+      platform: "flextensions",
+      fetch: async () => [
+        {
+          platform: "flextensions",
+          id: "901",
+          course: { platform: "flextensions", id: "42", name: "COMPSCI 169A - LEC 001", code: "COMPSCI 169A", sameAs: "canvas:COMPSCI 169A" },
+          title: "HW 3",
+          url: "https://bcourses.berkeley.edu/a/1",
+          dueAt: extension?.status === "approved" ? HW3_MON : HW3_FRI,
+          submitted: false,
+          kind: "assignment",
+          submitAt: "elsewhere",
+          sameAs: "canvas:1",
+          ...(extension ? { extension } : {}),
+        },
+      ],
+    };
+    await syncOnce(s, [canvasOnly, gradescope, flextensions], google, NOW);
+    const eventId = events(google)[0]![0];
+    extension = { status: "approved", originalDueAt: HW3_FRI };
+    expect(await syncOnce(s, [canvasOnly, gradescope, flextensions], google, NOW + 1000)).toMatchObject({ created: 0, updated: 1, removed: 0 });
+    expect(events(google)).toEqual([[eventId, "CS 169A · Homework 3", "2026-10-27T06:59:00.000Z"]]);
+  });
+});
+
+describe("trackDueDates", () => {
+  it("notes when a deadline moved and remembers the dates before, carrying both forward", async () => {
+    const { trackDueDates } = await import("../src/sync.js");
+    const first = [canvasAssignment("1", "HW 3", "2026-10-24T06:59:00Z"), canvasAssignment("2", "Lab 4", "2026-10-22T06:59:00Z")];
+    const second = trackDueDates(
+      [canvasAssignment("1", "HW 3", "2026-10-27T06:59:00Z"), canvasAssignment("2", "Lab 4", "2026-10-22T06:59:00.000Z")],
+      first,
+      NOW,
+    );
+    expect(second[0]).toMatchObject({ earlierDueDates: ["2026-10-24T06:59:00Z"], dueMovedAt: NOW });
+    // The same instant written differently isn't a move.
+    expect(second[1]!.dueMovedAt).toBeUndefined();
+
+    const third = trackDueDates([canvasAssignment("1", "HW 3", "2026-10-27T06:59:00Z")], second, NOW + 1000);
+    expect(third[0]).toMatchObject({ earlierDueDates: ["2026-10-24T06:59:00Z"], dueMovedAt: NOW });
+
+    let history = third;
+    for (let day = 28; day <= 33; day++) {
+      history = trackDueDates([canvasAssignment("1", "HW 3", `2026-10-${String(day).padStart(2, "0")}T06:59:00Z`)], history, NOW + day);
+    }
+    expect(history[0]!.earlierDueDates).toHaveLength(5);
+    expect(history[0]!.dueMovedAt).toBe(NOW + 33);
+  });
+});

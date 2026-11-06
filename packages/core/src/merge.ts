@@ -75,19 +75,25 @@ function dueClose(a: string, b: string): boolean {
 /** The deadlines a copy knows: its own, and the one before an extension. */
 const deadlines = (a: Assignment) => [a.dueAt, a.extension?.originalDueAt].filter((d): d is string => Boolean(d));
 
+const anyClose = (a: string[], b: string[]) => a.some((x) => b.some((y) => dueClose(x, y)));
+
 /**
  * Whether two copies are the same piece of work. A copy that says which
  * other copy it is ("sameAs") settles it. Otherwise the titles have to match
  * and a deadline of each has to be close: a copy that knows about an
- * extension matches both the old and the new date. When one copy has no due
- * date (a placeholder, or a site that hides past deadlines), the titles have
- * to agree exactly, since there's no date to back the match up.
+ * extension matches both the old and the new date. When one site moves the
+ * date and the other hasn't caught up, copies whose titles agree exactly
+ * still match on the dates they shared before. When one copy has no due date
+ * (a placeholder, or a site that hides past deadlines), the titles have to
+ * agree exactly, since there's no date to back the match up.
  */
 function sameWork(a: Assignment, b: Assignment): boolean {
   if (a.sameAs === `${b.platform}:${b.id}` || b.sameAs === `${a.platform}:${a.id}`) return true;
   const [da, db] = [deadlines(a), deadlines(b)];
-  if (da.length && db.length) return titlesMatch(a.title, b.title) && da.some((x) => db.some((y) => dueClose(x, y)));
-  return titlesMatchExactly(a.title, b.title);
+  if (!da.length || !db.length) return titlesMatchExactly(a.title, b.title);
+  if (titlesMatch(a.title, b.title) && anyClose(da, db)) return true;
+  const history = (x: Assignment, now: string[]) => [...(x.earlierDueDates ?? []), ...now];
+  return titlesMatchExactly(a.title, b.title) && anyClose(history(a, da), history(b, db));
 }
 
 /** The course on its own platform a copy came from, e.g. "canvas:1500". */
@@ -404,10 +410,12 @@ export function mergeAssignments(assignments: Assignment[], options: MergeOption
   return groups.map(({ course, courseKey, courseLabel, items: unordered }) => {
     const items = [...unordered].sort((a, b) => order.get(a)! - order.get(b)!);
     const lead = items[0]!;
-    // An approved extension moves the deadline, even if the site the work is
-    // turned in on hasn't caught up yet.
+    // When the copies disagree, the one whose date moved most recently is the
+    // newest word, whichever site it's on. An approved extension moves the
+    // deadline too, even if the site the work is turned in on hasn't caught up.
+    const [moved] = items.filter((i) => i.dueAt && i.dueMovedAt).sort((a, b) => b.dueMovedAt! - a.dueMovedAt!);
     const extension = items.find((i) => i.extension?.status === "approved") ?? items.find((i) => i.extension);
-    const leadDue = lead.dueAt ?? items.find((i) => i.dueAt)?.dueAt ?? null;
+    const leadDue = moved?.dueAt ?? lead.dueAt ?? items.find((i) => i.dueAt)?.dueAt ?? null;
     const extendedDue = extension?.extension?.status === "approved" ? extension.dueAt : null;
     const dueAt =
       extendedDue && (!leadDue || Date.parse(extendedDue) > Date.parse(leadDue)) ? extendedDue : leadDue;
