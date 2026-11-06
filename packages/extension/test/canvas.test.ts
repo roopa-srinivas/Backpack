@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fetchCanvas, nextLink, parseCanvasJson } from "../src/sources/canvas.js";
+import { fetchCanvas, nextLink, parseCanvasJson, toAssignment } from "../src/sources/canvas.js";
 
 const HOST = "bcourses.berkeley.edu";
 
@@ -89,10 +89,10 @@ describe("fetchCanvas", () => {
     });
 
     const assignments = await fetchCanvas(HOST, fetchImpl);
-    expect(assignments.map((a) => [a.id, a.kind, a.submitted])).toEqual([
-      ["9", "assignment", true],
-      ["10", "quiz", false],
-      ["11", "exam", false],
+    expect(assignments.map((a) => [a.id, a.kind, a.submitted, a.submitAt])).toEqual([
+      ["9", "assignment", true, "here"],
+      ["10", "quiz", false, "here"],
+      ["11", "exam", false, "elsewhere"],
     ]);
     expect(assignments[0]).toMatchObject({
       platform: "canvas",
@@ -104,6 +104,17 @@ describe("fetchCanvas", () => {
     // The closed course (1600) was never asked for, and every call carried the login cookie.
     expect(calls.some((c) => c.url.includes("/courses/1600/"))).toBe(false);
     expect(calls.every((c) => c.init?.credentials === "include")).toBe(true);
+  });
+
+  it("tells work turned in on bCourses from a tool it opens or a grade placeholder", () => {
+    const submitAt = (submission_types: string[]) =>
+      toAssignment({ id: 1 }, { id: 2, name: "HW", due_at: null, html_url: "", points_possible: null, submission_types }).submitAt;
+    expect(submitAt(["online_upload", "online_url"])).toBe("here");
+    expect(submitAt(["discussion_topic"])).toBe("here");
+    expect(submitAt(["external_tool"])).toBe("tool");
+    expect(submitAt(["on_paper"])).toBe("elsewhere");
+    expect(submitAt(["not_graded"])).toBe("elsewhere");
+    expect(submitAt([])).toBe("elsewhere");
   });
 
   it("asks the student to sign in when Canvas says they're signed out", async () => {

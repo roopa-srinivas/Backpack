@@ -38,6 +38,12 @@ export const PLATFORMS: PlatformInfo[] = [
     available: true,
     origins: (state) => [`https://${prairielearnHost(state)}/*`],
   },
+  {
+    platform: "flextensions",
+    label: "Flextensions",
+    available: true,
+    origins: () => ["https://flextensions.berkeley.edu/*"],
+  },
 ];
 
 export function platformInfo(platform: Platform): PlatformInfo {

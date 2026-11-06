@@ -3,6 +3,7 @@ import { chromeTokenSource } from "./google/auth.js";
 import { CalendarClient } from "./google/calendar.js";
 import { platformInfo, prairielearnHost } from "./platforms.js";
 import { fetchCanvas } from "./sources/canvas.js";
+import { fetchFlextensions } from "./sources/flextensions.js";
 import { fetchGradescope } from "./sources/gradescope.js";
 import { fetchPrairieLearn } from "./sources/prairielearn.js";
 import { refreshCourseWebsites } from "./sources/websites.js";
@@ -20,6 +21,7 @@ const READERS: Partial<Record<Platform, (state: State) => Promise<Assignment[]>>
   canvas: (state) => fetchCanvas(state.canvasHost!),
   gradescope: () => fetchGradescope(),
   prairielearn: (state) => fetchPrairieLearn(prairielearnHost(state)),
+  flextensions: () => fetchFlextensions(),
 };
 
 /**
