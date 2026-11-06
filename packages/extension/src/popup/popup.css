@@ -38,7 +38,6 @@ section { padding: 0.8rem 1rem; border-bottom: 1px solid var(--border); }
 .links .name { flex: 1; font-weight: 500; }
 .state { font-size: 0.78rem; color: var(--ink2); }
 .state[data-ok="true"] { color: var(--ok); }
-.state.soon { font-style: italic; }
 .platforms { list-style: none; display: grid; gap: 0.45rem; }
 .platforms li { display: flex; align-items: center; gap: 0.5rem; }
 .check { display: flex; align-items: center; gap: 0.5rem; flex: 1; cursor: pointer; }

@@ -146,7 +146,7 @@ function renderWebsites(state: State) {
       ? "No current courses found on bCourses."
       : missing
         ? `Couldn't find a website for ${missing} course${missing === 1 ? "" : "s"} on bCourses. Add ${missing === 1 ? "it" : "them"} below, or mark a course as having none.`
-        : "Found on bCourses. Reading assignments from course websites is coming soon.";
+        : "Found on bCourses.";
   $("websites").replaceChildren(...entries.map(([id, website]) => websiteRow(id, website)));
 
   const toggle = $<HTMLButtonElement>("toggle-earlier-websites");
