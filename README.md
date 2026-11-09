@@ -4,7 +4,7 @@ Backpack puts every assignment from Canvas, Gradescope and PrairieLearn on your 
 
 Course sites each keep their own list of due dates, and the same homework often shows up on two of them. Backpack reads all of them using the logins already in your browser, merges the duplicates, and keeps a calendar up to date: new assignments appear, moved due dates move, and finished work gets checked off or removed.
 
-**Status:** early. Canvas, Gradescope, PrairieLearn and Flextensions work today. Backpack also finds each course's website on bCourses; reading assignments from those websites is next, followed by a web dashboard for setting up your format with a live preview.
+**Status:** in progress. Canvas, Gradescope, PrairieLearn and Flextensions work today. Backpack also finds each course's website on bCourses; reading assignments from those websites is next, followed by a web dashboard for setting up your format with a live preview.
 
 ## How it works
 
